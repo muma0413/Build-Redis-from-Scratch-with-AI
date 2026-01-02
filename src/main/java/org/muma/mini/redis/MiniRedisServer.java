@@ -1,0 +1,64 @@
+package org.muma.mini.redis;
+
+import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.EventLoopGroup;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.SocketChannel;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.handler.logging.LogLevel;
+import io.netty.handler.logging.LoggingHandler;
+import org.muma.mini.redis.protocol.RedisCommandHandler;
+import org.muma.mini.redis.protocol.RespDecoder;
+import org.muma.mini.redis.protocol.RespEncoder;
+import org.muma.mini.redis.store.impl.MemoryStorageEngine;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+public class MiniRedisServer {
+
+    private static final Logger log = LoggerFactory.getLogger(MiniRedisServer.class);
+    private final int port;
+
+    public MiniRedisServer(int port) {
+        this.port = port;
+    }
+
+    public void start() throws InterruptedException {
+        EventLoopGroup bossGroup = new NioEventLoopGroup(1);
+        EventLoopGroup workerGroup = new NioEventLoopGroup();
+
+        try {
+            var bootstrap = new ServerBootstrap();
+            bootstrap.group(bossGroup, workerGroup)
+                    .channel(NioServerSocketChannel.class)
+                    // 在 Boss 线程增加 Netty 自带的日志 Handler，可以看到 TCP 连接握手细节
+                    .handler(new LoggingHandler(LogLevel.INFO))
+                    .childHandler(new ChannelInitializer<SocketChannel>() {
+                        @Override
+                        protected void initChannel(SocketChannel ch) {
+                            ch.pipeline()
+                                    .addLast(new RespDecoder())
+                                    .addLast(new RespEncoder())
+                                    .addLast(new RedisCommandHandler(new MemoryStorageEngine()));
+                        }
+                    });
+
+            log.info("Starting Mini-Redis server on port {}", port);
+            ChannelFuture future = bootstrap.bind(port).sync();
+
+            log.info("Mini-Redis started successfully.");
+            future.channel().closeFuture().sync();
+        } catch (Exception e) {
+            log.error("Failed to start server", e);
+        } finally {
+            bossGroup.shutdownGracefully();
+            workerGroup.shutdownGracefully();
+        }
+    }
+
+    public static void main(String[] args) throws InterruptedException {
+        new MiniRedisServer(6379).start();
+    }
+}

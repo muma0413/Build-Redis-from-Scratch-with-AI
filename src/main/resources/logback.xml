@@ -1,0 +1,15 @@
+<configuration>
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <!-- 格式: 时间 [线程] 级别 类名 - 消息 -->
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="STDOUT" />
+    </root>
+
+    <!-- 可以开启 Netty 的详细日志用于排查底层字节流问题，平时设为 INFO -->
+    <logger name="io.netty" level="INFO" />
+</configuration>
