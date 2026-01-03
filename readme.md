@@ -72,7 +72,7 @@
 
 ### 构建与运行
 ```bash
-git clone https://github.com/your-username/mini-redis-ai.git
+git clone https://github.com/muma0413/Build-Redis-from-Scratch-with-AI.git
 cd mini-redis-ai
 mvn clean package
 java -jar target/mini-redis-1.0-SNAPSHOT.jar
