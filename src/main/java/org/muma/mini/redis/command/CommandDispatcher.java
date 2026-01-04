@@ -2,8 +2,7 @@ package org.muma.mini.redis.command;
 
 import io.netty.channel.ChannelHandlerContext;
 import org.muma.mini.redis.command.impl.hash.*;
-import org.muma.mini.redis.command.impl.key.DelCommand;
-import org.muma.mini.redis.command.impl.key.ExpireCommand;
+import org.muma.mini.redis.command.impl.key.*;
 import org.muma.mini.redis.command.impl.list.*;
 import org.muma.mini.redis.command.impl.set.*;
 import org.muma.mini.redis.command.impl.string.*;
@@ -115,6 +114,11 @@ public class CommandDispatcher {
     private void registerGenericCommands() {
         commandMap.put("DEL", new DelCommand());
         commandMap.put("EXPIRE", new ExpireCommand());
+
+        // New
+        commandMap.put("EXISTS", new ExistsCommand());
+        commandMap.put("TTL", new TTLCommand());
+        commandMap.put("PTTL", new PTTLCommand());
     }
 
     private void registerStringCommands() {

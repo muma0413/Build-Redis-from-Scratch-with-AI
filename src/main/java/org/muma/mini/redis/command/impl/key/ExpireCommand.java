@@ -6,38 +6,61 @@ import org.muma.mini.redis.protocol.*;
 import org.muma.mini.redis.server.RedisContext;
 import org.muma.mini.redis.store.StorageEngine;
 
+import java.util.Locale;
+
+/**
+ * EXPIRE key seconds [NX|XX|GT|LT]
+ */
 public class ExpireCommand implements RedisCommand {
     @Override
-    public RedisMessage execute(StorageEngine storage,RedisArray args, RedisContext context) {
-        // 格式: EXPIRE key seconds
-        if (args.elements().length != 3) {
-            return new ErrorMessage("ERR wrong number of arguments for 'expire' command");
-        }
+    public RedisMessage execute(StorageEngine storage, RedisArray args, RedisContext context) {
+        RedisMessage[] elements = args.elements();
+        if (elements.length < 3) return errorArgs("expire");
 
-        String key = ((BulkString) args.elements()[1]).asString();
+        String key = ((BulkString) elements[1]).asString();
         long seconds;
         try {
-            assert ((BulkString) args.elements()[2]).asString() != null;
-            seconds = Long.parseLong(((BulkString) args.elements()[2]).asString());
+            String secStr = ((BulkString) elements[2]).asString();
+            if (secStr == null) return errorArgs("expire");
+            seconds = Long.parseLong(secStr);
         } catch (NumberFormatException e) {
-            return new ErrorMessage("ERR value is not an integer or out of range");
+            return errorInt();
         }
 
-        // 逻辑：取出数据 -> 设置时间 -> 放回存储(触发ttlMap更新)
-        // 注意：这里需要锁保证原子性，防止在设置过期时数据被删除或修改
+        // 解析选项
+        boolean nx = false, xx = false, gt = false, lt = false;
+        if (elements.length > 3) {
+            String opt = ((BulkString) elements[3]).asString().toUpperCase(Locale.ROOT);
+            switch (opt) {
+                case "NX" -> nx = true;
+                case "XX" -> xx = true;
+                case "GT" -> gt = true;
+                case "LT" -> lt = true;
+                default -> {
+                    return new ErrorMessage("ERR unsupported option");
+                }
+            }
+        }
+
         synchronized (storage.getLock(key)) {
-            RedisData data = storage.get(key);
+            RedisData<?> data = storage.get(key);
             if (data == null) {
-                return new RedisInteger(0); // Key 不存在
+                return new RedisInteger(0);
             }
 
-            long expireAt = System.currentTimeMillis() + (seconds * 1000);
-            data.setExpireAt(expireAt);
+            long currentExpire = data.getExpireAt();
+            long newExpire = System.currentTimeMillis() + (seconds * 1000);
 
-            // 重新 put 以触发 StorageEngine 内部 ttlMap 的更新逻辑
+            // 检查条件
+            if (nx && currentExpire != -1) return new RedisInteger(0); // 已有过期，NX 失败
+            if (xx && currentExpire == -1) return new RedisInteger(0); // 无过期，XX 失败
+            if (gt && (currentExpire == -1 || newExpire <= currentExpire)) return new RedisInteger(0); // 不大于，GT 失败
+            if (lt && currentExpire != -1 && newExpire >= currentExpire) return new RedisInteger(0); // 不小于，LT 失败
+
+            data.setExpireAt(newExpire);
             storage.put(key, data);
         }
 
-        return new RedisInteger(1); // 设置成功
+        return new RedisInteger(1);
     }
 }
