@@ -66,6 +66,7 @@ public class CommandDispatcher {
 
         commandMap.put("SMOVE", new SMoveCommand());
         commandMap.put("SSCAN", new SScanCommand());
+        commandMap.put("SINTERCARD", new SInterCardCommand());
     }
 
     private void registerListCommands() {
