@@ -60,6 +60,15 @@ public class LInsertCommand implements RedisCommand {
             // 只有当插入成功 (ret > 0) 时，才需要回写 Storage
             if (ret > 0) {
                 storage.put(key, data);
+
+                // 【新增】触发唤醒
+                // LINSERT 可能会让一个原本非空的 List 变得更长，
+                // 但理论上 BLPOP 是在等 "空 -> 非空" 的状态变化。
+                // 不过 Redis 逻辑是只要有 push 就 signal。
+                // 假如 BLPOP 正在阻塞（说明 List 为空），LINSERT 会失败（因为 List 为空时找不到 pivot）。
+                // 所以实际上 LINSERT 几乎不可能唤醒 BLPOP（除非 pivot 是刚被另一个线程删掉的瞬间...）。
+                // 但为了逻辑完备性，我们还是加上。
+                storage.getBlockingManager().onPush(key, storage);
             }
 
             return new RedisInteger(ret);

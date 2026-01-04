@@ -10,13 +10,13 @@ import org.muma.mini.redis.store.StorageEngine;
 
 /**
  * LPUSHX key element [element ...]
- *
+ * <p>
  * 【时间复杂度】 O(K)
  * 仅当 key 存在时才推入。
  */
 public class LPushXCommand implements RedisCommand {
     @Override
-    public RedisMessage execute(StorageEngine storage,RedisArray args, RedisContext context) {
+    public RedisMessage execute(StorageEngine storage, RedisArray args, RedisContext context) {
         RedisMessage[] elements = args.elements();
         if (elements.length < 3) return errorArgs("lpushx");
 
@@ -40,6 +40,11 @@ public class LPushXCommand implements RedisCommand {
             }
 
             storage.put(key, data);
+
+            // 【新增】只有当确实执行了 push 时才触发
+            // 因为 LPUSHX 只有 key 存在才推，如果 key 不存在 data==null 我们前面直接返回 0 了
+            // 所以能走到这里，说明肯定推入了数据。
+            storage.getBlockingManager().onPush(key, storage);
             return new RedisInteger(list.size());
         }
     }

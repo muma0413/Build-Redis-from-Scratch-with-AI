@@ -38,6 +38,10 @@ public class RPushXCommand implements RedisCommand {
             }
 
             storage.put(key, data);
+
+            // 【新增】触发唤醒
+            storage.getBlockingManager().onPush(key, storage);
+
             return new RedisInteger(list.size());
         }
     }
