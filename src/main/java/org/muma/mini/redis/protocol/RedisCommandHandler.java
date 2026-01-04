@@ -3,7 +3,6 @@ package org.muma.mini.redis.protocol;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import org.muma.mini.redis.command.CommandDispatcher;
-import org.muma.mini.redis.store.StorageEngine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -17,12 +16,15 @@ public class RedisCommandHandler extends SimpleChannelInboundHandler<RedisMessag
     private static final Logger log = LoggerFactory.getLogger(RedisCommandHandler.class);
 
     // 记录连接的客户端数量（简单计数）
+    // 注意：这个静态变量在多线程环境下可能不准，建议用 AtomicInteger
     private static int connectedClients = 0;
 
+    // 【修改点 1】持有单例 Dispatcher
     private final CommandDispatcher dispatcher;
 
-    public RedisCommandHandler(StorageEngine storage) {
-        this.dispatcher = new CommandDispatcher(storage);
+    // 【修改点 2】构造函数接收单例 Dispatcher
+    public RedisCommandHandler(CommandDispatcher dispatcher) {
+        this.dispatcher = dispatcher;
     }
 
     @Override
@@ -60,7 +62,7 @@ public class RedisCommandHandler extends SimpleChannelInboundHandler<RedisMessag
 
         String commandName = cmdNameBulk.asString().toUpperCase(Locale.ROOT);
 
-        // 记录日志，忽略 INFO 和 SCAN 的详细参数以免刷屏，但初次调试可以保留
+        // 记录日志
         if (log.isDebugEnabled() || !commandName.equals("INFO")) {
             String argsLog = Arrays.stream(elements).skip(1).map(this::convertToString).collect(Collectors.joining(", "));
             log.info("Execute Command: {} args=[{}]", commandName, argsLog);
@@ -68,22 +70,24 @@ public class RedisCommandHandler extends SimpleChannelInboundHandler<RedisMessag
 
         try {
             RedisMessage response = switch (commandName) {
+                // 特殊连接管理命令，可以在这里拦截，也可以全部下沉到 Dispatcher
                 case "PING" -> new SimpleString("PONG");
                 case "ECHO" -> handleEcho(elements);
                 case "QUIT" -> {
                     ctx.close();
                     yield null;
                 }
-                case "COMMAND" -> dispatcher.dispatch(commandName, array, ctx);
+
+                // 元数据 Mock 命令 (你可以选择保留在这里，或者写成 Command 类注册进 Dispatcher)
+                case "COMMAND" -> new SimpleString("OK"); // 简单 Mock，防止客户端报错
                 case "SCAN" -> handleScanMock(elements);
-
-                // --- 新增 INFO 处理 ---
                 case "INFO" -> handleInfo(elements);
-                // ---------------------
 
+                // 【核心修改】其余所有数据命令，交给单例 Dispatcher
                 default -> dispatcher.dispatch(commandName, array, ctx);
             };
 
+            // 如果返回 null (如 BLPOP 阻塞中)，则不写回
             if (response != null) {
                 ctx.writeAndFlush(response);
             }
@@ -93,14 +97,12 @@ public class RedisCommandHandler extends SimpleChannelInboundHandler<RedisMessag
         }
     }
 
+    // --- Mock 处理逻辑 ---
+
     private RedisMessage handleInfo(RedisMessage[] elements) {
-        // ARDM 或 redis-cli 有时会发 "INFO" 有时发 "INFO server" / "INFO all"
-        // 简单起见，我们统一返回核心 Server 段信息。
-
         long uptime = ManagementFactory.getRuntimeMXBean().getUptime() / 1000;
-        long pid = ProcessHandle.current().pid(); // JDK 9+ 获取 PID
+        long pid = ProcessHandle.current().pid();
 
-        // JDK 15+ Text Blocks: 格式化非常清晰
         String info = """
                 # Server
                 redis_version:6.0.0
@@ -134,25 +136,19 @@ public class RedisCommandHandler extends SimpleChannelInboundHandler<RedisMessag
                 # Replication
                 role:master
                 connected_slaves:0
-                
-                # CPU
-                used_cpu_sys:0.0
-                used_cpu_user:0.0
                 """.formatted(
                 System.getProperty("os.name"),
                 pid,
                 uptime,
                 uptime / (3600 * 24),
-                connectedClients,
-                connectedClients // 简单mock，每次连接算一次
+                connectedClients
         );
 
         return new BulkString(info);
     }
 
-    // ... 其他方法 (handleScanMock, handleEcho, convertToString) 保持不变 ...
-
     private RedisMessage handleScanMock(RedisMessage[] elements) {
+        // 返回游标 0 和一些假 Key
         return new RedisArray(new RedisMessage[]{
                 new BulkString("0"),
                 new RedisArray(new RedisMessage[]{

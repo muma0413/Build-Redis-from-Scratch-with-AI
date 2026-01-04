@@ -9,6 +9,7 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
+import org.muma.mini.redis.command.CommandDispatcher;
 import org.muma.mini.redis.protocol.RedisCommandHandler;
 import org.muma.mini.redis.protocol.RespDecoder;
 import org.muma.mini.redis.protocol.RespEncoder;
@@ -29,6 +30,9 @@ public class MiniRedisServer {
         EventLoopGroup bossGroup = new NioEventLoopGroup(1);
         EventLoopGroup workerGroup = new NioEventLoopGroup();
 
+        // 1. 在外面初始化单例
+        CommandDispatcher dispatcher = new CommandDispatcher(new MemoryStorageEngine());
+
         try {
             var bootstrap = new ServerBootstrap();
             bootstrap.group(bossGroup, workerGroup)
@@ -41,7 +45,7 @@ public class MiniRedisServer {
                             ch.pipeline()
                                     .addLast(new RespDecoder())
                                     .addLast(new RespEncoder())
-                                    .addLast(new RedisCommandHandler(new MemoryStorageEngine()));
+                                    .addLast(new RedisCommandHandler(dispatcher));
                         }
                     });
 
