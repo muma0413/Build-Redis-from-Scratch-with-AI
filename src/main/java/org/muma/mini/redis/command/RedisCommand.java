@@ -1,17 +1,19 @@
 package org.muma.mini.redis.command;
 
+import io.netty.channel.ChannelHandlerContext;
 import org.muma.mini.redis.common.RedisZSet;
 import org.muma.mini.redis.protocol.BulkString;
 import org.muma.mini.redis.protocol.ErrorMessage;
 import org.muma.mini.redis.protocol.RedisArray;
 import org.muma.mini.redis.protocol.RedisMessage;
+import org.muma.mini.redis.server.RedisContext;
 import org.muma.mini.redis.store.StorageEngine;
 
 import java.util.List;
 
 public interface RedisCommand {
     // 执行命令，传入存储引擎和参数
-    RedisMessage execute(StorageEngine storage, RedisArray args);
+    RedisMessage execute(StorageEngine storage, RedisArray args, RedisContext context);
 
 
     /**
@@ -49,4 +51,5 @@ public interface RedisCommand {
     default ErrorMessage errorInt() {
         return new ErrorMessage("ERR value is not an integer or out of range");
     }
+
 }

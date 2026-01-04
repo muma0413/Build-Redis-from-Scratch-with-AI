@@ -1,13 +1,16 @@
 package org.muma.mini.redis.command;
 
+import io.netty.channel.ChannelHandlerContext;
 import org.muma.mini.redis.command.impl.hash.*;
 import org.muma.mini.redis.command.impl.key.DelCommand;
 import org.muma.mini.redis.command.impl.key.ExpireCommand;
+import org.muma.mini.redis.command.impl.list.*;
 import org.muma.mini.redis.command.impl.string.*;
 import org.muma.mini.redis.command.impl.zset.*;
 import org.muma.mini.redis.protocol.ErrorMessage;
 import org.muma.mini.redis.protocol.RedisArray;
 import org.muma.mini.redis.protocol.RedisMessage;
+import org.muma.mini.redis.server.RedisContext;
 import org.muma.mini.redis.store.StorageEngine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,8 +39,38 @@ public class CommandDispatcher {
         registerStringCommands();
         registerHashCommands();
         registerZsetCommands();
+        registerListCommands();
 
         log.info("CommandDispatcher initialized. Total commands registered: {}", commandMap.size());
+    }
+
+    private void registerListCommands() {
+
+
+        commandMap.put("LPOP", new LPopCommand());
+        commandMap.put("LPUSH", new LPushCommand());
+        commandMap.put("LPUSHX", new LPushXCommand());
+
+
+        commandMap.put("LINDEX", new LIndexCommand());
+        commandMap.put("LINSERT", new LInsertCommand());
+        commandMap.put("LLEN", new LLenCommand());
+        commandMap.put("LREM", new LRemCommand());
+        commandMap.put("LSET", new LSetCommand());
+        commandMap.put("LTRIM", new LTrimCommand());
+        commandMap.put("LRANGE", new LRangeCommand());
+
+
+        commandMap.put("RPOP", new RPopCommand());
+        commandMap.put("RPUSH", new RPushCommand());
+        commandMap.put("RPUSHX", new RPushXCommand());
+
+        // blocking
+        commandMap.put("BLPOP", new BLPopCommand());
+        commandMap.put("BRPOP", new BRPopCommand());
+        commandMap.put("BRPOPLPUSH", new BRPopLPushCommand());
+
+
     }
 
     private void registerZsetCommands() {
@@ -47,6 +80,14 @@ public class CommandDispatcher {
         commandMap.put("ZCOUNT", new ZCountCommand());
         commandMap.put("ZRANGEBYSCORE", new ZRangeByScoreCommand());
         commandMap.put("ZREVRANGE", new ZRevRangeCommand());
+        commandMap.put("ZSCAN", new ZScanCommand());
+        commandMap.put("ZINCRBY", new ZIncrByCommand());
+        commandMap.put("ZREMRANGEBYRANK", new ZRemRangeByRankCommand());
+        commandMap.put("ZREMRANGEBYSCORE", new ZRemRangeByScoreCommand());
+        commandMap.put("ZUNIONSTORE", new ZUnionStoreCommand());
+        commandMap.put("ZINTERSTORE", new ZInterStoreCommand());
+
+
     }
 
     private void registerGenericCommands() {
@@ -81,7 +122,7 @@ public class CommandDispatcher {
     /**
      * 核心分发逻辑
      */
-    public RedisMessage dispatch(String commandName, RedisArray args) {
+    public RedisMessage dispatch(String commandName, RedisArray args, ChannelHandlerContext nettyCtx) {
         // 1. 查找命令
         String cmdUpper = commandName.toUpperCase(Locale.ROOT);
         RedisCommand command = commandMap.get(cmdUpper);
@@ -94,7 +135,9 @@ public class CommandDispatcher {
         // 2. 执行并监控耗时
         long startTime = System.nanoTime();
         try {
-            RedisMessage response = command.execute(storage, args);
+            // 封装 Context
+            RedisContext context = new RedisContext(nettyCtx);
+            RedisMessage response = command.execute(storage, args, context);
 
             // 记录慢日志 (比如超过 10ms)
             long duration = (System.nanoTime() - startTime) / 1000_000; // ms

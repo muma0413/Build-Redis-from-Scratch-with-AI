@@ -4,11 +4,12 @@ import org.muma.mini.redis.command.RedisCommand;
 import org.muma.mini.redis.common.RedisData;
 import org.muma.mini.redis.common.RedisDataType;
 import org.muma.mini.redis.protocol.*;
+import org.muma.mini.redis.server.RedisContext;
 import org.muma.mini.redis.store.StorageEngine;
 
 public class MGetCommand implements RedisCommand {
     @Override
-    public RedisMessage execute(StorageEngine storage, RedisArray args) {
+    public RedisMessage execute(StorageEngine storage,RedisArray args, RedisContext context) {
         // 格式: MGET key [key ...]
         RedisMessage[] elements = args.elements();
         if (elements.length < 2) {

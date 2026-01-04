@@ -74,14 +74,14 @@ public class RedisCommandHandler extends SimpleChannelInboundHandler<RedisMessag
                     ctx.close();
                     yield null;
                 }
-                case "COMMAND" -> dispatcher.dispatch(commandName, array);
+                case "COMMAND" -> dispatcher.dispatch(commandName, array, ctx);
                 case "SCAN" -> handleScanMock(elements);
 
                 // --- 新增 INFO 处理 ---
                 case "INFO" -> handleInfo(elements);
                 // ---------------------
 
-                default -> dispatcher.dispatch(commandName, array);
+                default -> dispatcher.dispatch(commandName, array, ctx);
             };
 
             if (response != null) {

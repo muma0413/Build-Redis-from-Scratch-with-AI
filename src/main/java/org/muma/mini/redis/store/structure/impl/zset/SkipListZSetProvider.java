@@ -167,4 +167,38 @@ public class SkipListZSetProvider implements ZSetProvider {
 
         return rankLast - rankFirst + 1;
     }
+
+    @Override
+    public int removeRange(long start, long stop) {
+        // 1. 复用 range 获取要删除的 Entry 列表
+        List<RedisZSet.ZSetEntry> toRemove = range(start, stop);
+
+        // 2. 循环删除
+        int count = 0;
+        for (RedisZSet.ZSetEntry entry : toRemove) {
+            if (remove(entry.member()) > 0) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    @Override
+    public int removeRangeByScore(RangeSpec range) {
+        // 1. 复用 rangeByScore 获取列表
+        // 注意：如果数据量极大，全量获取可能会 OOM。
+        // 生产级优化应该分批获取删除，或者下沉到底层做指针操作。
+        // Mini-Redis 暂时全量获取。
+        List<RedisZSet.ZSetEntry> toRemove = rangeByScore(range, 0, Integer.MAX_VALUE);
+
+        // 2. 循环删除
+        int count = 0;
+        for (RedisZSet.ZSetEntry entry : toRemove) {
+            if (remove(entry.member()) > 0) {
+                count++;
+            }
+        }
+        return count;
+    }
+
 }

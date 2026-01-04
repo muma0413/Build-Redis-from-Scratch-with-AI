@@ -1,6 +1,8 @@
 package org.muma.mini.redis.store.impl;
 
+import lombok.Getter;
 import org.muma.mini.redis.common.RedisData;
+import org.muma.mini.redis.server.BlockingManager;
 import org.muma.mini.redis.store.StorageEngine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,7 +19,7 @@ public class MemoryStorageEngine implements StorageEngine {
     private static final Logger log = LoggerFactory.getLogger(MemoryStorageEngine.class);
 
     // 1. 数据存储 (Key -> Data)
-    private final Map<String, RedisData> memoryDb = new ConcurrentHashMap<>();
+    private final Map<String, RedisData<?>> memoryDb = new ConcurrentHashMap<>();
 
     // 2. 过期时间存储 (Key -> ExpireAt Timestamp)
     // 专门维护这个 Map，可以让清理线程只关注需要过期的 Key，极大提升效率
@@ -29,6 +31,9 @@ public class MemoryStorageEngine implements StorageEngine {
         t.setDaemon(true); // 设置为守护线程，防止阻碍 JVM 关闭
         return t;
     });
+
+    @Getter
+    private final BlockingManager blockingManager = new BlockingManager();
 
     public MemoryStorageEngine() {
         // 启动定期清理任务：每 1000ms 执行一次
@@ -77,8 +82,8 @@ public class MemoryStorageEngine implements StorageEngine {
     }
 
     @Override
-    public RedisData get(String key) {
-        RedisData data = memoryDb.get(key);
+    public RedisData<?> get(String key) {
+        RedisData<?> data = memoryDb.get(key);
         if (data == null) return null;
 
         // 惰性删除 (Lazy Expiration) 依然保留作为双重保障
@@ -90,7 +95,7 @@ public class MemoryStorageEngine implements StorageEngine {
     }
 
     @Override
-    public void put(String key, RedisData data) {
+    public void put(String key, RedisData<?> data) {
         memoryDb.put(key, data);
         // 如果数据有过期时间，记录到 ttlMap；如果没有，尝试从 ttlMap 移除 (可能由有过期变为无过期)
         if (data.getExpireAt() != -1) {

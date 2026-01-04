@@ -30,4 +30,8 @@ public interface ZSetProvider {
 
     long count(RangeSpec range);
 
+    int removeRange(long start, long stop);
+
+    int removeRangeByScore(RangeSpec range);
+
 }

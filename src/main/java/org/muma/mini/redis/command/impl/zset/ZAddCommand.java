@@ -5,6 +5,7 @@ import org.muma.mini.redis.common.RedisData;
 import org.muma.mini.redis.common.RedisDataType;
 import org.muma.mini.redis.common.RedisZSet;
 import org.muma.mini.redis.protocol.*;
+import org.muma.mini.redis.server.RedisContext;
 import org.muma.mini.redis.store.StorageEngine;
 
 /**
@@ -24,7 +25,7 @@ import org.muma.mini.redis.store.StorageEngine;
  */
 public class ZAddCommand implements RedisCommand {
     @Override
-    public RedisMessage execute(StorageEngine storage, RedisArray args) {
+    public RedisMessage execute(StorageEngine storage,RedisArray args, RedisContext context) {
         RedisMessage[] elements = args.elements();
 
         // 参数校验: ZADD key score member... (长度至少为 4，且减去命令名和Key后必须是偶数)
@@ -38,7 +39,7 @@ public class ZAddCommand implements RedisCommand {
         // 原子性锁
         synchronized (storage.getLock(key)) {
             // 1. 获取数据 (使用通配符泛型)
-            RedisData<RedisZSet> data = storage.get(key);
+            RedisData<?> data = storage.get(key);
             RedisZSet zset;
 
             if (data == null) {

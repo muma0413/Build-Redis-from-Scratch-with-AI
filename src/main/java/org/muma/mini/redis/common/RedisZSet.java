@@ -16,7 +16,8 @@ import java.util.List;
 public class RedisZSet implements Serializable {
 
     // 数据传输对象 (DTO)
-    public record ZSetEntry(String member, double score) {}
+    public record ZSetEntry(String member, double score) {
+    }
 
     // Redis 默认阈值配置
     private static final int MAX_ZIPLIST_ENTRIES = 128;
@@ -119,8 +120,9 @@ public class RedisZSet implements Serializable {
 
     /**
      * 反向范围查询 (ZREVRANGE)
+     *
      * @param start 0-based start index
-     * @param stop 0-based stop index
+     * @param stop  0-based stop index
      */
     public List<ZSetEntry> revRange(long start, long stop) {
         return provider.revRange(start, stop);
@@ -129,9 +131,10 @@ public class RedisZSet implements Serializable {
 
     /**
      * 按分数范围查询 (ZRANGEBYSCORE)
-     * @param range 分数范围定义
+     *
+     * @param range  分数范围定义
      * @param offset LIMIT offset
-     * @param count LIMIT count
+     * @param count  LIMIT count
      */
     public List<ZSetEntry> rangeByScore(RangeSpec range, int offset, int count) {
         return provider.rangeByScore(range, offset, count);
@@ -140,9 +143,51 @@ public class RedisZSet implements Serializable {
 
     /**
      * 按分数范围计数 (ZCOUNT)
+     *
      * @param range 分数范围定义
      */
     public long count(RangeSpec range) {
         return provider.count(range);
     }
+
+    public int removeRange(long start, long stop) {
+        return provider.removeRange(start, stop);
+    }
+
+    public int removeRangeByScore(RangeSpec range) {
+        return provider.removeRangeByScore(range);
+    }
+
+    /**
+     * 简单的合并操作 (用于构建临时结果)
+     *
+     * @param otherEntry    要合并的元素
+     * @param weight        权重
+     * @param aggregateType 聚合方式 (0=SUM, 1=MIN, 2=MAX)
+     */
+    public void merge(ZSetEntry otherEntry, double weight, int aggregateType) {
+        String member = otherEntry.member();
+        double score = otherEntry.score() * weight;
+
+        Double currentScore = provider.getScore(member);
+
+        if (currentScore == null) {
+            // 新元素，直接添加 (如果是 InterStore，逻辑在外部控制，这里只管合并)
+            // 注意：如果是 InterStore，只有当所有集合都有时才添加，这里主要服务于 UnionStore
+            provider.add(score, member);
+        } else {
+            // 已存在，执行聚合逻辑
+            double newScore;
+            if (aggregateType == 0) { // SUM
+                newScore = currentScore + score;
+            } else if (aggregateType == 1) { // MIN
+                newScore = Math.min(currentScore, score);
+            } else { // MAX
+                newScore = Math.max(currentScore, score);
+            }
+            // 更新分数
+            provider.add(newScore, member);
+        }
+    }
+
 }

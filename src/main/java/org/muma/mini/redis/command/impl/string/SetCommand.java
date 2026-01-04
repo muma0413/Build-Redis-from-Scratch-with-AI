@@ -4,6 +4,7 @@ import org.muma.mini.redis.command.RedisCommand;
 import org.muma.mini.redis.common.RedisData;
 import org.muma.mini.redis.common.RedisDataType;
 import org.muma.mini.redis.protocol.*;
+import org.muma.mini.redis.server.RedisContext;
 import org.muma.mini.redis.store.StorageEngine;
 
 import java.util.Locale;
@@ -14,7 +15,7 @@ public class SetCommand implements RedisCommand {
     private static final String OK = "OK";
 
     @Override
-    public RedisMessage execute(StorageEngine storage, RedisArray args) {
+    public RedisMessage execute(StorageEngine storage,RedisArray args, RedisContext context) {
         // 基本格式: SET key value [NX|XX] [EX seconds | PX milliseconds]
         RedisMessage[] elements = args.elements();
         if (elements.length < 3) {

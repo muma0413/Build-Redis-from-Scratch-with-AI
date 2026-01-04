@@ -8,6 +8,7 @@ import org.muma.mini.redis.protocol.BulkString;
 import org.muma.mini.redis.protocol.ErrorMessage;
 import org.muma.mini.redis.protocol.RedisArray;
 import org.muma.mini.redis.protocol.RedisMessage;
+import org.muma.mini.redis.server.RedisContext;
 import org.muma.mini.redis.store.StorageEngine;
 import org.muma.mini.redis.store.structure.impl.zset.RangeSpec;
 import org.slf4j.Logger;
@@ -22,7 +23,7 @@ public class ZRangeByScoreCommand implements RedisCommand {
     private static final Logger log = LoggerFactory.getLogger(ZRangeByScoreCommand.class);
 
     @Override
-    public RedisMessage execute(StorageEngine storage, RedisArray args) {
+    public RedisMessage execute(StorageEngine storage,RedisArray args, RedisContext context) {
         RedisMessage[] elements = args.elements();
         if (elements.length < 4) {
             return new ErrorMessage("ERR wrong number of arguments for 'zrangebyscore' command");

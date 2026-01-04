@@ -5,6 +5,7 @@ import org.muma.mini.redis.common.RedisData;
 import org.muma.mini.redis.common.RedisDataType;
 import org.muma.mini.redis.common.RedisHash;
 import org.muma.mini.redis.protocol.*;
+import org.muma.mini.redis.server.RedisContext;
 import org.muma.mini.redis.store.StorageEngine;
 
 /**
@@ -13,7 +14,7 @@ import org.muma.mini.redis.store.StorageEngine;
  */
 public class HLenCommand implements RedisCommand {
     @Override
-    public RedisMessage execute(StorageEngine storage, RedisArray args) {
+    public RedisMessage execute(StorageEngine storage, RedisArray args, RedisContext context) {
         if (args.elements().length != 2) return new ErrorMessage("ERR wrong number of arguments for 'hlen'");
 
         String key = ((BulkString) args.elements()[1]).asString();

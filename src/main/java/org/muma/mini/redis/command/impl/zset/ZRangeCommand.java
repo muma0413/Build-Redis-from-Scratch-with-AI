@@ -5,6 +5,7 @@ import org.muma.mini.redis.common.RedisData;
 import org.muma.mini.redis.common.RedisDataType;
 import org.muma.mini.redis.common.RedisZSet;
 import org.muma.mini.redis.protocol.*;
+import org.muma.mini.redis.server.RedisContext;
 import org.muma.mini.redis.store.StorageEngine;
 
 import java.util.List;
@@ -26,7 +27,7 @@ import java.util.List;
  */
 public class ZRangeCommand implements RedisCommand {
     @Override
-    public RedisMessage execute(StorageEngine storage, RedisArray args) {
+    public RedisMessage execute(StorageEngine storage,RedisArray args, RedisContext context) {
         RedisMessage[] elements = args.elements();
         if (elements.length < 4) {
             return new ErrorMessage("ERR wrong number of arguments for 'zrange' command");

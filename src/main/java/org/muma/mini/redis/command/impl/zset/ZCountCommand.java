@@ -5,6 +5,7 @@ import org.muma.mini.redis.common.RedisData;
 import org.muma.mini.redis.common.RedisDataType;
 import org.muma.mini.redis.common.RedisZSet;
 import org.muma.mini.redis.protocol.*;
+import org.muma.mini.redis.server.RedisContext;
 import org.muma.mini.redis.store.StorageEngine;
 import org.muma.mini.redis.store.structure.impl.zset.RangeSpec;
 
@@ -19,7 +20,7 @@ import static org.muma.mini.redis.store.structure.impl.zset.RangeSpec.parse;
 public class ZCountCommand implements RedisCommand {
 
     @Override
-    public RedisMessage execute(StorageEngine storage, RedisArray args) {
+    public RedisMessage execute(StorageEngine storage,RedisArray args, RedisContext context) {
         if (args.elements().length != 4) {
             return new ErrorMessage("ERR wrong number of arguments for 'zcount' command");
         }

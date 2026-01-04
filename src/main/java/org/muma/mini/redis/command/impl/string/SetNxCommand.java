@@ -4,11 +4,12 @@ import org.muma.mini.redis.command.RedisCommand;
 import org.muma.mini.redis.common.RedisData;
 import org.muma.mini.redis.common.RedisDataType;
 import org.muma.mini.redis.protocol.*;
+import org.muma.mini.redis.server.RedisContext;
 import org.muma.mini.redis.store.StorageEngine;
 
 public class SetNxCommand implements RedisCommand {
     @Override
-    public RedisMessage execute(StorageEngine storage, RedisArray args) {
+    public RedisMessage execute(StorageEngine storage,RedisArray args, RedisContext context) {
         // 格式: SETNX key value
         if (args.elements().length != 3) {
             return new ErrorMessage("ERR wrong number of arguments for 'setnx' command");

@@ -8,6 +8,7 @@ import org.muma.mini.redis.protocol.BulkString;
 import org.muma.mini.redis.protocol.ErrorMessage;
 import org.muma.mini.redis.protocol.RedisArray;
 import org.muma.mini.redis.protocol.RedisMessage;
+import org.muma.mini.redis.server.RedisContext;
 import org.muma.mini.redis.store.StorageEngine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,7 +22,7 @@ public class ZRevRangeCommand implements RedisCommand {
     private static final int WARNING_THRESHOLD = 10000;
 
     @Override
-    public RedisMessage execute(StorageEngine storage, RedisArray args) {
+    public RedisMessage execute(StorageEngine storage,RedisArray args, RedisContext context) {
         RedisMessage[] elements = args.elements();
         if (elements.length < 4) {
             return new ErrorMessage("ERR wrong number of arguments for 'zrevrange' command");

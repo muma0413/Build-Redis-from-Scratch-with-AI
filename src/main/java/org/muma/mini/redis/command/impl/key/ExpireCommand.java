@@ -3,11 +3,12 @@ package org.muma.mini.redis.command.impl.key;
 import org.muma.mini.redis.command.RedisCommand;
 import org.muma.mini.redis.common.RedisData;
 import org.muma.mini.redis.protocol.*;
+import org.muma.mini.redis.server.RedisContext;
 import org.muma.mini.redis.store.StorageEngine;
 
 public class ExpireCommand implements RedisCommand {
     @Override
-    public RedisMessage execute(StorageEngine storage, RedisArray args) {
+    public RedisMessage execute(StorageEngine storage,RedisArray args, RedisContext context) {
         // 格式: EXPIRE key seconds
         if (args.elements().length != 3) {
             return new ErrorMessage("ERR wrong number of arguments for 'expire' command");

@@ -166,4 +166,43 @@ public class ZipListZSetProvider implements ZSetProvider {
         }
         return count;
     }
+
+    @Override
+    public int removeRange(long start, long stop) {
+        int size = size();
+        if (start < 0) start = size + start;
+        if (stop < 0) stop = size + stop;
+        if (start < 0) start = 0;
+        if (start > stop || start >= size) return 0;
+        if (stop >= size) stop = size - 1;
+
+        int removed = 0;
+        // 从后往前删，避免索引错位
+        // ZipList 物理索引: Rank * 2
+        for (long r = stop; r >= start; r--) {
+            int idx = (int) (r * 2);
+            list.remove(idx + 1);
+            list.remove(idx);
+            removed++;
+        }
+        return removed;
+    }
+
+    @Override
+    public int removeRangeByScore(RangeSpec range) {
+        int removed = 0;
+        // 必须从前往后遍历，因为删除了元素索引会变，
+        // 或者使用迭代器，或者倒序遍历。
+        // 由于是 ArrayList，倒序遍历比较安全且高效。
+        for (int i = list.size() - 2; i >= 0; i -= 2) {
+            double score = (Double) list.get(i + 1);
+            if (range.contains(score)) {
+                list.remove(i + 1);
+                list.remove(i);
+                removed++;
+            }
+        }
+        return removed;
+    }
+
 }
