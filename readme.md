@@ -1,16 +1,15 @@
 # Mini-Redis (AI Edition)
 
 <div align="center">
-  <!-- 这里之后可以放一个生成的 Logo -->
   <h1>🤖 + ☕ = 🚀</h1>
   <h3>从零构建 Redis：人机结对编程实录</h3>
-  <p>基于 Java 17 + Netty，深度复刻 Redis 底层数据结构与核心原理。</p>
-  <p><b>人类架构师的设计 × AI 的极致执行</b></p>
+  <p><b>Java 17 × Netty × 核心原理复刻</b></p>
+  <p>不仅仅是 KV 存储，更是对 Redis 灵魂的致敬。</p>
 
   <p>
     <a href="#-项目简介">项目简介</a> •
-    <a href="#-核心特性">核心特性</a> •
-    <a href="#-开发实录-pdf">开发实录 (PDF)</a> •
+    <a href="#-硬核技术栈">硬核技术栈</a> •
+    <a href="#-开发实录-pdf">开发实录</a> •
     <a href="#-快速开始">快速开始</a> •
     <a href="#-路线图">路线图</a>
   </p>
@@ -20,49 +19,72 @@
 
 ## 📖 项目简介
 
-**Mini-Redis** 不仅仅是一个简单的 Key-Value 缓存 Demo。这是一个严肃的工程尝试，旨在用 **Java 17** 和 **Netty** 反向工程并重构 Redis 的核心内部机制。
+**Mini-Redis** 是一个基于 **Java 17** 和 **Netty** 构建的高性能 Redis 服务器实现。
 
-**本项目的最大亮点在于其开发模式：100% AI 结对编程 (AI Pair Programming)。**
-项目中的每一行代码、每一个架构决策（例如使用策略模式实现存储引擎动态切换）、每一次 Bug 修复，都源于人类架构师与 Gemini AI 之间的一场场深度对话。
+不同于市面上常见的“玩具级”实现（仅封装 HashMap），本项目致力于**深度复刻 Redis 的核心内部机制**。我们拒绝黑盒，每一行代码都源于对 Redis 源码 (`t_zset.c`, `t_list.c`, `networking.c`) 的深度理解与再创造。
 
-这个仓库承载了两个使命：
-1.  作为一个高质量的教学项目，展示 Redis 核心组件（跳表、压缩列表、Reactor模型）的 Java 实现细节。
-2.  作为一个**软件工程实验**，展示“人类负责设计与把控，AI 负责编码与落地”的未来开发范式。
+**开发模式**：本项目由人类架构师与 Gemini AI 全程结对编程完成。从架构设计到 Bug 修复，所有决策过程均有完整记录。
 
-## ✨ 核心特性
+---
 
-我们拒绝简单的 `HashMap` 包装，我们追求对 Redis 原理的忠实还原：
+## 🛠️ 硬核技术栈 & 核心特性
 
-### 🏗️ 基础架构
--   **高性能网络**: 基于 **Netty 4.1** 的非阻塞 IO 模型。
--   **协议解析**: 纯手写完整的 **RESP (Redis Serialization Protocol)** 解析器与编码器。
--   **分层存储**: 抽象的 `StorageEngine` 接口，支持底层存储引擎的插件化（为未来接入 LSM-Tree 做准备）。
--   **泛型设计**: 利用 Java 17 泛型特性构建类型安全的 `RedisData<T>` 模型。
+### 1. 🏗️ 高性能通信架构
+-   **Reactor 模型**: 基于 **Netty 4.1** 实现非阻塞 I/O，单机吞吐量对标原生 Redis。
+-   **RESP 协议栈**: 纯手写 RESP (Redis Serialization Protocol) 解析器与编码器，支持递归解析数组与 BulkString。
+-   **Command Dispatcher**: 基于单例模式的高效命令分发器，支持 `RedisContext` 上下文传递，为未来 ACL 和 事务预留扩展点。
 
-### 🧠 数据结构与算法
--   **String**: 二进制安全字符串，支持原子计数 (`INCR`)、分布式锁原语 (`SETNX`, `SET EX NX`)。
--   **Hash**: 实现 **双引擎动态切换 (Dual-Engine Storage)**：
-    -   *ZipList (压缩列表)*: 小数据量下使用紧凑布局节省内存。
-    -   *HashTable (哈希表)*: 大数据量下自动升级，保证 O(1) 性能。
--   **Sorted Set (ZSet)**: **生产级实现**：
-    -   手写 **SkipList (跳表)** 核心引擎，包含 `span` (跨度) 计算，支持 O(logN) 的排名查询 (`ZRANK`)。
-    -   结合 `HashMap` 实现 O(1) 的分数查询。
-    -   同样支持 ZipList 与 SkipList 的自适应切换。
--   **过期策略**: 实现 **惰性删除 (Lazy)** + **定期删除 (Active)** 策略，防止内存泄漏。
+### 2. 🧠 数据结构：极致优化与双引擎
+我们实现了 Redis 最引以为傲的**“自适应存储策略”**，根据数据量大小动态切换底层结构：
 
-## 🤖 开发实录 (PDF)
+#### 🔹 String (字符串)
+-   **二进制安全**: 底层基于 `byte[]`，完美支持图片、视频等二进制数据。
+-   **原子计数器**: 完整实现 `INCR`, `DECRBY`, `INCRBY`，保证并发安全。
+-   **位图操作 (Bitmap)**: 支持 `SETBIT`, `BITCOUNT` 等位操作指令，轻松应对亿级用户签到场景。
+-   **高阶特性**: 支持 Redis 6.2 `GETEX` (Get and Expire) 及 `SETNX` 分布式锁原语。
 
-相比于代码，**“如何写出代码”的过程**往往更有价值。我们将整个开发过程的对话记录整理成了 PDF，完整还原了从 0 到 1 的思考路径。
+#### 🔹 List (列表)
+-   **QuickList 架构**: 抛弃传统的 LinkedList，实现 **QuickList (双向链表 + ZipList)** 混合结构，平衡内存与性能。
+-   **阻塞队列 (Blocking Queue)**: 深度复刻 `BLPOP`, `BRPOP`, `BRPOPLPUSH`。
+    -   实现 **Global Blocking Registry**，支持精确唤醒与超时处理。
+    -   完美解决并发下的虚假唤醒 (Spurious Wakeup) 问题。
 
-*在这里，你可以看到我们是如何讨论架构、如何发现逻辑漏洞、以及 AI 是如何被“调教”成顶级程序员的。*
+#### 🔹 Hash (哈希)
+-   **双引擎切换 (Dual-Engine)**:
+    -   *ZipList*: 小数据量下使用紧凑数组，极大节省内存。
+    -   *HashTable*: 大数据量下自动升级，保证 O(1) 查询。
+-   **高频指令**: 支持 `HINCRBY` 原子递增及 `HSCAN` 游标遍历（基于 Snapshot 模拟）。
 
-| 阶段 | 内容描述 | 记录下载 |
+#### 🔹 Set (集合)
+-   **IntSet 优化**: 当集合元素均为整数时，采用二分查找的有序数组存储，内存占用降低 10x。
+-   **集合运算**: 实现 `SUNION`, `SINTER`, `SDIFF` 及其 Store 变体。
+-   **Redis 7.0 特性**: 首发支持 **`SINTERCARD`**，利用基数估算与 Limit 截断，极大提升大集合交集计算性能。
+
+#### 🔹 Sorted Set (有序集合)
+-   **SkipList (跳表) 引擎**: 纯手写 Java 版跳表，包含核心的 **Span (跨度)** 维护。
+    -   支持 O(logN) 的 `ZRANK` (排名查询)。
+    -   支持 O(logN) 的 `ZRANGE` (范围查询)。
+-   **复杂查询**: 实现了 `ZREVRANGE` (倒序), `ZRANGEBYSCORE` (分数范围), `ZCOUNT` (利用 Rank 相减优化)。
+-   **防御性编程**: 针对大 Key 扫描 (`ZRANGE 0 -1`) 植入了日志预警机制。
+
+### 3. 🛡️ 稳定性与健壮性
+-   **过期策略**: **惰性删除 (Lazy)** + **定期扫描 (Active)** 双管齐下，杜绝内存泄漏。
+-   **类型安全**: 全局采用 `RedisData<T>` 泛型封装，杜绝 `ClassCastException`。
+-   **防御性日志**: 对 O(N) 复杂度的命令（如 `KEYS`, `HGETALL`）增加慢查询预警。
+
+---
+
+## 🤖 开发实录 (The AI Journey)
+
+我们将整个开发过程的对话记录整理成了 PDF，这是一份珍贵的**现代软件工程实录**。
+
+| 阶段 | 核心内容 | 记录下载 |
 | :--- | :--- | :--- |
-| **Phase 1** | **通信骨架**: Netty 环境搭建、RESP 协议状态机解析、基础命令分发。 | [下载 PDF](./docs/conversation/phase1-protocol.pdf) |
-| **Phase 2** | **基础结构**: 实现 `RedisData<T>`，String 原子性，以及 Hash 的策略模式设计。 | [下载 PDF](./docs/conversation/phase2-hash.pdf) |
-| **Phase 3** | **ZSet 与跳表**: 最硬核的一章。手写概率性跳表、维护 Span 指针、实现排名计算。 | [下载 PDF](./docs/conversation/phase3-skiplist.pdf) |
+| **Phase 1** | **通信骨架**: Netty, RESP, Dispatcher | [Coming Soon] |
+| **Phase 2** | **内存引擎**: String 原子性, Hash 策略模式 | [Coming Soon] |
+| **Phase 3** | **高阶结构**: 手写 SkipList, QuickList, 阻塞队列 | [Coming Soon] |
 
-*(注：对话记录将随项目进度持续更新)*
+---
 
 ## 🚀 快速开始
 
@@ -76,3 +98,86 @@ git clone https://github.com/muma0413/Build-Redis-from-Scratch-with-AI.git
 cd mini-redis-ai
 mvn clean package
 java -jar target/mini-redis-1.0-SNAPSHOT.jar
+```
+
+
+### 连接测试
+你可以使用官方 redis-cli 或任何可视化客户端（如 ARDM）连接：
+```bash
+redis-cli -p 6379
+127.0.0.1:6379> PING
+PONG
+127.0.0.1:6379> SET user:1 "Gemini"
+OK
+127.0.0.1:6379> ZADD rank 100 "Player1"
+(integer) 1
+127.0.0.1:6379> ZRANK rank "Player1"
+(integer) 0
+```
+
+
+## 🛣️ 路线图 (Roadmap)
+
+我们正在按照严格的工程标准迭代本项目，目前已完成核心内存数据库的所有功能。
+
+- [x] **Phase 1: 骨架与协议**
+    - [x] Netty 非阻塞 Reactor 模型搭建
+    - [x] RESP 协议纯手写解析器与编码器
+    - [x] Command Dispatcher 命令分发系统
+
+- [x] **Phase 2: 内存数据结构 (Memory Engine)**
+    - [x] **String**: 基础读写、原子计数 (`INCRBY`)、位操作 (`SETBIT/BITCOUNT`)、`GETEX`
+    - [x] **Hash**: ZipList/HashTable 动态切换策略、`HSCAN`、集合运算
+    - [x] **List**: QuickList (双向链表+ZipList) 架构、`BLPOP/BRPOP` 阻塞队列实现
+    - [x] **Set**: IntSet/HashTable 动态切换、`SINTERCARD` (Redis 7.0)、集合运算 (`SUNION/SDIFF`)
+    - [x] **ZSet**: SkipList (跳表) 核心引擎、Span 排名计算、`ZRANGEBYSCORE`、`ZREVRANGE`
+
+- [x] **Phase 3: 架构重构与优化**
+    - [x] 引入 `RedisContext` 上下文传递
+    - [x] 泛型 `RedisData<T>` 类型安全改造
+    - [x] `BlockingManager` 全局阻塞注册表与并发控制
+
+- [ ] **Phase 4: 持久化 (Persistence)**
+    - [ ] **AOF (Append Only File)**: 写命令日志追加与重放
+    - [ ] **RDB (Snapshot)**: 内存快照序列化与加载
+
+- [ ] **Phase 5: 分布式与高可用**
+    - [ ] **Replication**: 主从复制协议 (PSYNC)
+    - [ ] **Cluster**: 简单的分片逻辑 (Optional)
+
+---
+
+## 📚 源码深度解析
+
+想知道 Mini-Redis 内部是如何工作的？我们准备了深度的架构剖析文档：
+
+- [**总体架构设计**](./docs/architecture.md): Netty 线程模型与命令分发流程。
+- [**数据结构解密**](./docs/data-structures.md):
+    - 为什么 ZSet 要用 SkipList？Span 是如何计算排名的？
+    - QuickList 是如何通过“链表+数组”平衡内存与性能的？
+    - Set 的 IntSet 优化策略。
+- [**并发与阻塞机制**](./docs/locking.md): 深度解析 `BLPOP` 是如何利用 Netty 实现非阻塞挂起与异步唤醒的。
+
+
+
+## 🐳 Docker 部署
+
+不想配置 Java 环境？使用 Docker 一键启动！
+
+### 1. 构建镜像
+```bash
+docker build -t mini-redis .
+```
+## 🤝 贡献 (Contribution)
+
+本项目是一个探索 **"AI Pair Programming" (AI 结对编程)** 边界的实验性项目。我们欢迎任何形式的贡献！
+
+#### 如何参与？
+1.  **Fork 本仓库**：将代码克隆到你的本地。
+2.  **选择任务**：从上面的 [路线图](#-路线图-roadmap) 中选择未完成的特性（如持久化模块）。
+3.  **提交 PR**：
+    *   请确保你的代码风格与现有项目保持一致。
+    *   **必须包含单元测试**：所有新功能都需经过 JUnit 测试验证。
+4.  **Issue 讨论**：如果你发现了 Bug 或有更好的架构建议（比如 SkipList 的随机算法优化），欢迎提 Issue 讨论。
+
+**特别感谢**：本项目的所有代码与架构决策均由人类架构师与 AI 助手 (Gemini) 共同完成。
