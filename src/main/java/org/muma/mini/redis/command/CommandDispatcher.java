@@ -20,6 +20,9 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 
+/**
+ *
+ */
 public class CommandDispatcher {
 
     private static final Logger log = LoggerFactory.getLogger(CommandDispatcher.class);
@@ -61,6 +64,9 @@ public class CommandDispatcher {
         commandMap.put("SUNION", new SUnionCommand());
         commandMap.put("SINTER", new SInterCommand());
         commandMap.put("SDIFF", new SDiffCommand());
+
+        commandMap.put("SMOVE", new SMoveCommand());
+        commandMap.put("SSCAN", new SScanCommand());
     }
 
     private void registerListCommands() {
