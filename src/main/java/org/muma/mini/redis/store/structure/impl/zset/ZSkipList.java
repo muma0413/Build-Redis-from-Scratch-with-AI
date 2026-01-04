@@ -1,7 +1,5 @@
 package org.muma.mini.redis.store.structure.impl.zset;
 
-import org.muma.mini.redis.store.structure.ZSetProvider;
-
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
@@ -216,4 +214,58 @@ public class ZSkipList {
         }
         System.out.println("null");
     }
+
+    /**
+     * 找到分数范围内第一个符合条件的节点
+     * 用于 ZRANGEBYSCORE 和 ZCOUNT
+     */
+    public ZSkipListNode firstInRange(RangeSpec range) {
+        if (!isInRange(range)) return null;
+
+        ZSkipListNode x = this.header;
+        for (int i = this.level - 1; i >= 0; i--) {
+            while (x.level[i].forward != null && !isGreaterThanMin(x.level[i].forward.score, range)) {
+                x = x.level[i].forward;
+            }
+        }
+
+        x = x.level[0].forward;
+        // 再次检查 x 是否真的满足 range (可能超出 max)
+        if (x == null || !range.contains(x.score)) return null;
+        return x;
+    }
+
+    private boolean isGreaterThanMin(double score, RangeSpec range) {
+        return range.minex ? score > range.min : score >= range.min;
+    }
+
+    // 简单检查整个跳表是否有部分在范围内 (通过 head 和 tail 判断)
+    private boolean isInRange(RangeSpec range) {
+        if (range.min > range.max || (range.min == range.max && (range.minex || range.maxex))) return false;
+        if (tail == null || !isGreaterThanMin(tail.score, range)) return false;
+        ZSkipListNode first = header.level[0].forward;
+        if (first == null || !isLessThanMax(first.score, range)) return false;
+        return true;
+    }
+
+    private boolean isLessThanMax(double score, RangeSpec range) {
+        return range.maxex ? score < range.max : score <= range.max;
+    }
+
+    /**
+     * 找到范围内最后一个节点 (用于 ZCOUNT)
+     */
+    public ZSkipListNode lastInRange(RangeSpec range) {
+        if (!isInRange(range)) return null;
+        ZSkipListNode x = this.header;
+        for (int i = this.level - 1; i >= 0; i--) {
+            while (x.level[i].forward != null && isLessThanMax(x.level[i].forward.score, range)) {
+                x = x.level[i].forward;
+            }
+        }
+        if (x == null || !range.contains(x.score)) return null;
+        return x;
+    }
+
+
 }

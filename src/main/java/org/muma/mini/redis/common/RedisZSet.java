@@ -1,6 +1,7 @@
 package org.muma.mini.redis.common;
 
 import org.muma.mini.redis.store.structure.ZSetProvider;
+import org.muma.mini.redis.store.structure.impl.zset.RangeSpec;
 import org.muma.mini.redis.store.structure.impl.zset.SkipListZSetProvider;
 import org.muma.mini.redis.store.structure.impl.zset.ZipListZSetProvider;
 
@@ -114,5 +115,34 @@ public class RedisZSet implements Serializable {
         double val = (old == null ? 0 : old) + increment;
         add(val, member);
         return val;
+    }
+
+    /**
+     * 反向范围查询 (ZREVRANGE)
+     * @param start 0-based start index
+     * @param stop 0-based stop index
+     */
+    public List<ZSetEntry> revRange(long start, long stop) {
+        return provider.revRange(start, stop);
+    }
+
+
+    /**
+     * 按分数范围查询 (ZRANGEBYSCORE)
+     * @param range 分数范围定义
+     * @param offset LIMIT offset
+     * @param count LIMIT count
+     */
+    public List<ZSetEntry> rangeByScore(RangeSpec range, int offset, int count) {
+        return provider.rangeByScore(range, offset, count);
+    }
+
+
+    /**
+     * 按分数范围计数 (ZCOUNT)
+     * @param range 分数范围定义
+     */
+    public long count(RangeSpec range) {
+        return provider.count(range);
     }
 }

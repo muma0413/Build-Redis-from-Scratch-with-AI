@@ -4,9 +4,7 @@ import org.muma.mini.redis.command.impl.hash.*;
 import org.muma.mini.redis.command.impl.key.DelCommand;
 import org.muma.mini.redis.command.impl.key.ExpireCommand;
 import org.muma.mini.redis.command.impl.string.*;
-import org.muma.mini.redis.command.impl.zset.ZAddCommand;
-import org.muma.mini.redis.command.impl.zset.ZRangeCommand;
-import org.muma.mini.redis.command.impl.zset.ZScoreCommand;
+import org.muma.mini.redis.command.impl.zset.*;
 import org.muma.mini.redis.protocol.ErrorMessage;
 import org.muma.mini.redis.protocol.RedisArray;
 import org.muma.mini.redis.protocol.RedisMessage;
@@ -46,6 +44,9 @@ public class CommandDispatcher {
         commandMap.put("ZADD", new ZAddCommand());
         commandMap.put("ZRANGE", new ZRangeCommand());
         commandMap.put("ZSCORE", new ZScoreCommand());
+        commandMap.put("ZCOUNT", new ZCountCommand());
+        commandMap.put("ZRANGEBYSCORE", new ZRangeByScoreCommand());
+        commandMap.put("ZREVRANGE", new ZRevRangeCommand());
     }
 
     private void registerGenericCommands() {

@@ -4,6 +4,7 @@ import org.muma.mini.redis.common.RedisZSet;
 import org.muma.mini.redis.store.structure.ZSetProvider;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public class ZipListZSetProvider implements ZSetProvider {
@@ -111,5 +112,58 @@ public class ZipListZSetProvider implements ZSetProvider {
             }
         }
         return -1;
+    }
+
+    @Override
+    public List<RedisZSet.ZSetEntry> revRange(long start, long stop) {
+        int size = size();
+        // 1. 转换索引: 正向 Range 的索引
+        // RevStart(0) -> Index(size-1)
+        long realStart = size - 1 - stop;
+        long realStop = size - 1 - start;
+
+        // 2. 复用 range 方法获取正向列表
+        List<RedisZSet.ZSetEntry> list = range(realStart, realStop);
+
+        // 3. 反转列表
+        Collections.reverse(list);
+        return list;
+    }
+
+    @Override
+    public List<RedisZSet.ZSetEntry> rangeByScore(RangeSpec range, int offset, int count) {
+        List<RedisZSet.ZSetEntry> result = new ArrayList<>();
+        int skipped = 0;
+
+        // 线性遍历: member, score, member, score...
+        for (int i = 0; i < list.size(); i += 2) {
+            double score = (Double) list.get(i + 1);
+
+            // ZipList 是有序的，如果超过 max 直接退出 (优化点)
+            if (range.maxex ? score >= range.max : score > range.max) break;
+
+            if (range.contains(score)) {
+                if (skipped < offset) {
+                    skipped++;
+                    continue;
+                }
+                result.add(new RedisZSet.ZSetEntry((String) list.get(i), score));
+                if (result.size() == count) break;
+            }
+        }
+        return result;
+    }
+
+    @Override
+    public long count(RangeSpec range) {
+        long count = 0;
+        for (int i = 1; i < list.size(); i += 2) {
+            double score = (Double) list.get(i);
+            if (range.maxex ? score >= range.max : score > range.max) break; // 提前退出
+            if (range.contains(score)) {
+                count++;
+            }
+        }
+        return count;
     }
 }
