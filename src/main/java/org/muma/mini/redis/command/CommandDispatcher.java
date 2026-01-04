@@ -5,6 +5,7 @@ import org.muma.mini.redis.command.impl.hash.*;
 import org.muma.mini.redis.command.impl.key.DelCommand;
 import org.muma.mini.redis.command.impl.key.ExpireCommand;
 import org.muma.mini.redis.command.impl.list.*;
+import org.muma.mini.redis.command.impl.set.*;
 import org.muma.mini.redis.command.impl.string.*;
 import org.muma.mini.redis.command.impl.zset.*;
 import org.muma.mini.redis.protocol.ErrorMessage;
@@ -40,17 +41,33 @@ public class CommandDispatcher {
         registerHashCommands();
         registerZsetCommands();
         registerListCommands();
+        registerSetCommands();
+
 
         log.info("CommandDispatcher initialized. Total commands registered: {}", commandMap.size());
     }
 
-    private void registerListCommands() {
+    private void registerSetCommands() {
 
+        commandMap.put("SADD", new SAddCommand());
+        commandMap.put("SCARD", new SCardCommand());
+        commandMap.put("SISMEMBER", new SIsMemberCommand());
+
+        commandMap.put("SMEMBERS", new SMembersCommand());
+        commandMap.put("SPOP", new SPopCommand());
+        commandMap.put("SRANDMEMBER", new SRandMemberCommand());
+        commandMap.put("SREM", new SRemCommand());
+
+        commandMap.put("SUNION", new SUnionCommand());
+        commandMap.put("SINTER", new SInterCommand());
+        commandMap.put("SDIFF", new SDiffCommand());
+    }
+
+    private void registerListCommands() {
 
         commandMap.put("LPOP", new LPopCommand());
         commandMap.put("LPUSH", new LPushCommand());
         commandMap.put("LPUSHX", new LPushXCommand());
-
 
         commandMap.put("LINDEX", new LIndexCommand());
         commandMap.put("LINSERT", new LInsertCommand());
@@ -59,7 +76,6 @@ public class CommandDispatcher {
         commandMap.put("LSET", new LSetCommand());
         commandMap.put("LTRIM", new LTrimCommand());
         commandMap.put("LRANGE", new LRangeCommand());
-
 
         commandMap.put("RPOP", new RPopCommand());
         commandMap.put("RPUSH", new RPushCommand());
