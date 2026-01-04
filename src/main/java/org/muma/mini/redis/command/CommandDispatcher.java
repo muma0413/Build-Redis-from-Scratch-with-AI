@@ -129,6 +129,14 @@ public class CommandDispatcher {
         commandMap.put("MSET", new MSetCommand());
         commandMap.put("MGET", new MGetCommand());
         commandMap.put("SETNX", new SetNxCommand());
+        commandMap.put("DECRBY", new DecrByCommand());
+        commandMap.put("DECR", new DecrCommand());
+        commandMap.put("INCRBY", new IncrByCommand());
+        commandMap.put("GETBIT", new GetBitCommand());
+        commandMap.put("SETBIT", new SetBitCommand());
+        commandMap.put("BITCOUNT", new BitCountCommand());
+        commandMap.put("APPEND", new AppendCommand());
+        commandMap.put("STRLEN", new StrLenCommand());
     }
 
     private void registerHashCommands() {
