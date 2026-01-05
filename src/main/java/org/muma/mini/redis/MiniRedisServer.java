@@ -3,6 +3,7 @@ package org.muma.mini.redis;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
@@ -42,6 +43,10 @@ public class MiniRedisServer {
                     .channel(NioServerSocketChannel.class)
                     // 在 Boss 线程增加 Netty 自带的日志 Handler，可以看到 TCP 连接握手细节
                     .handler(new LoggingHandler(LogLevel.INFO))
+                    // 开启 TCP_NODELAY (禁用 Nagle 算法)，降低延迟
+                    .childOption(ChannelOption.TCP_NODELAY, true)
+                    // 开启 SO_KEEPALIVE
+                    .childOption(ChannelOption.SO_KEEPALIVE, true)
                     .childHandler(new ChannelInitializer<SocketChannel>() {
                         @Override
                         protected void initChannel(SocketChannel ch) {

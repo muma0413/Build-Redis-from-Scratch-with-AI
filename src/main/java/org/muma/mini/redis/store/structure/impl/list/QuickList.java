@@ -108,37 +108,45 @@ public class QuickList implements ListProvider {
         if (start > stop || start >= count) return Collections.emptyList();
         if (stop >= count) stop = count - 1;
 
-        List<byte[]> result = new ArrayList<>((int)(stop - start + 1));
+        List<byte[]> result = new ArrayList<>((int) (stop - start + 1));
 
-        // 遍历逻辑：找到 start 所在的 Node，然后顺序收集
-        // 优化：根据 start 靠近 head 还是 tail 决定从哪边开始找 Node
-        // 这里简单实现：从 head 开始
+        // 【核心优化】双向查找定位 Start Node
+        QuickListNode current;
+        int accumulated; // 记录 current 节点之前的元素总数
 
-        QuickListNode current = head;
-        int accumulated = 0; // 当前遍历过的元素总数
-
-        // 1. Skip nodes until we reach start
-        while (current != null) {
-            int nodeSize = current.size();
-            if (accumulated + nodeSize > start) {
-                break; // start 就在这个节点里
+        if (start < count / 2) {
+            // 从头找
+            current = head;
+            accumulated = 0;
+            while (current != null) {
+                if (accumulated + current.size() > start) break;
+                accumulated += current.size();
+                current = current.next;
             }
-            accumulated += nodeSize;
-            current = current.next;
+        } else {
+            // 从尾找
+            current = tail;
+            accumulated = count; // 初始为总数
+            while (current != null) {
+                accumulated -= current.size(); // 减去当前节点长度，得到当前节点起始位置
+                if (accumulated <= start) break;
+                current = current.prev;
+            }
         }
 
-        // 2. Collect elements
-        // 此时 accumulated <= start
+        // 定位到 Start 所在的 Node 后，开始收集
+        if (current == null) return result; // Should not happen
+
         int offsetInNode = (int) (start - accumulated);
         long needed = stop - start + 1;
 
+        // 注意：range 总是正向收集，所以即使是从尾部找到的 Node，收集时也要 current.next
         while (needed > 0 && current != null) {
             List<byte[]> zl = current.getZipList();
             for (int i = offsetInNode; i < zl.size() && needed > 0; i++) {
                 result.add(zl.get(i));
                 needed--;
             }
-            // 跨节点了，下一个节点从 0 开始取
             offsetInNode = 0;
             current = current.next;
         }
@@ -152,42 +160,72 @@ public class QuickList implements ListProvider {
         if (index < 0) index = count + index;
         if (index < 0 || index >= count) return null;
 
-        // 定位 Node
-        QuickListNode current = head;
-        int accumulated = 0;
+        // 【核心优化】双向查找
+        QuickListNode current;
+        int accumulated;
 
-        while (current != null) {
-            int nodeSize = current.size();
-            if (accumulated + nodeSize > index) {
-                // 找到了
-                int offset = (int) (index - accumulated);
-                return current.getZipList().get(offset);
+        if (index < count / 2) {
+            // 从头找
+            current = head;
+            accumulated = 0;
+            while (current != null) {
+                if (accumulated + current.size() > index) {
+                    int offset = (int) (index - accumulated);
+                    return current.getZipList().get(offset);
+                }
+                accumulated += current.size();
+                current = current.next;
             }
-            accumulated += nodeSize;
-            current = current.next;
+        } else {
+            // 从尾找
+            current = tail;
+            accumulated = count;
+            while (current != null) {
+                accumulated -= current.size();
+                if (accumulated <= index) {
+                    int offset = (int) (index - accumulated);
+                    return current.getZipList().get(offset);
+                }
+                current = current.prev;
+            }
         }
         return null;
     }
 
     @Override
     public void set(long index, byte[] element) {
-        // 逻辑同 index，找到后 set
         if (count == 0) throw new IndexOutOfBoundsException();
         if (index < 0) index = count + index;
         if (index < 0 || index >= count) throw new IndexOutOfBoundsException();
 
-        QuickListNode current = head;
-        int accumulated = 0;
+        // 【核心优化】双向查找 (逻辑同 index)
+        QuickListNode current;
+        int accumulated;
 
-        while (current != null) {
-            int nodeSize = current.size();
-            if (accumulated + nodeSize > index) {
-                int offset = (int) (index - accumulated);
-                current.getZipList().set(offset, element);
-                return;
+        if (index < count / 2) {
+            current = head;
+            accumulated = 0;
+            while (current != null) {
+                if (accumulated + current.size() > index) {
+                    int offset = (int) (index - accumulated);
+                    current.getZipList().set(offset, element);
+                    return;
+                }
+                accumulated += current.size();
+                current = current.next;
             }
-            accumulated += nodeSize;
-            current = current.next;
+        } else {
+            current = tail;
+            accumulated = count;
+            while (current != null) {
+                accumulated -= current.size();
+                if (accumulated <= index) {
+                    int offset = (int) (index - accumulated);
+                    current.getZipList().set(offset, element);
+                    return;
+                }
+                current = current.prev;
+            }
         }
     }
 
@@ -368,7 +406,6 @@ public class QuickList implements ListProvider {
             rpop(); // 复用 rpop
         }
     }
-
 
 
 }

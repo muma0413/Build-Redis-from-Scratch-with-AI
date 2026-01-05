@@ -14,76 +14,39 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 
-/**
- * Mini-Redis 终极基准测试工具
- * 特性：预热 + 多轮取平均 + 流水线压测
- */
-public class MiniRedisBenchmark {
+public class QuickListDeepAccessBenchmark {
 
     private static final String HOST = "127.0.0.1";
     private static final int PORT = 6379;
-
     private static final int CONCURRENCY = 50;
-    private static final int REQUESTS_PER_CLIENT = 10000;
+    private static final int REQUESTS_PER_CLIENT = 5000; // 单轮请求数
     private static final int TOTAL_REQUESTS = CONCURRENCY * REQUESTS_PER_CLIENT;
 
-    // 稳定测试配置
+    // 配置：预热轮数和正式轮数
     private static final int WARMUP_ROUNDS = 3;
     private static final int MEASURE_ROUNDS = 5;
 
-    // --- Commands Pre-allocation ---
-    // 1. String
-    private static final ByteBuf SET_CMD = buf("*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n");
-    private static final ByteBuf GET_CMD = buf("*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n");
-
-    // 2. Hash
-    private static final ByteBuf HSET_CMD = buf("*4\r\n$4\r\nHSET\r\n$6\r\nmyhash\r\n$6\r\nfield1\r\n$4\r\nval1\r\n");
-    private static final ByteBuf HGET_CMD = buf("*3\r\n$4\r\nHGET\r\n$6\r\nmyhash\r\n$6\r\nfield1\r\n");
-
-    // 3. List
-    private static final ByteBuf LPUSH_CMD = buf("*3\r\n$5\r\nLPUSH\r\n$6\r\nmylist\r\n$3\r\nval\r\n");
-    private static final ByteBuf LRANGE_CMD = buf("*4\r\n$6\r\nLRANGE\r\n$6\r\nmylist\r\n$1\r\n0\r\n$2\r\n10\r\n");
-
-    // 4. Set
-    private static final ByteBuf SADD_CMD = buf("*3\r\n$4\r\nSADD\r\n$5\r\nmyset\r\n$3\r\nval\r\n");
-    private static final ByteBuf SISMEMBER_CMD = buf("*3\r\n$9\r\nSISMEMBER\r\n$5\r\nmyset\r\n$3\r\nval\r\n");
-
-    // 5. ZSet
-    private static final ByteBuf ZADD_CMD = buf("*4\r\n$4\r\nZADD\r\n$6\r\nmyzset\r\n$3\r\n100\r\n$3\r\nval\r\n");
-    private static final ByteBuf ZRANGE_CMD = buf("*4\r\n$6\r\nZRANGE\r\n$6\r\nmyzset\r\n$1\r\n0\r\n$2\r\n10\r\n");
+    private static final ByteBuf LINDEX_TAIL_CMD = buf("*3\r\n$6\r\nLINDEX\r\n$6\r\nmylist\r\n$5\r\n19999\r\n");
+    private static final ByteBuf LSET_TAIL_CMD = buf("*4\r\n$4\r\nLSET\r\n$6\r\nmylist\r\n$5\r\n19999\r\n$3\r\nnew\r\n");
 
     private static ByteBuf buf(String cmd) {
         return Unpooled.unreleasableBuffer(Unpooled.wrappedBuffer(cmd.getBytes(StandardCharsets.UTF_8)));
     }
 
     public static void main(String[] args) throws InterruptedException {
-        System.out.println("========== Mini-Redis Ultimate Benchmark ==========");
-        System.out.println("Config: " + CONCURRENCY + " clients, " + REQUESTS_PER_CLIENT + " reqs/client");
-        System.out.println("Strategy: " + WARMUP_ROUNDS + " Warmup + " + MEASURE_ROUNDS + " Measure Rounds (Avg without min/max)");
-        System.out.println("---------------------------------------------------");
-
-        EventLoopGroup group = new NioEventLoopGroup(Runtime.getRuntime().availableProcessors());
+        EventLoopGroup group = new NioEventLoopGroup();
 
         try {
-            // String
-            runStableBenchmark(group, "SET", SET_CMD);
-            runStableBenchmark(group, "GET", GET_CMD);
+            System.out.println("========== Stability Benchmark ==========");
+            System.out.println("Config: " + WARMUP_ROUNDS + " Warmup + " + MEASURE_ROUNDS + " Measure Rounds");
 
-            // Hash
-            runStableBenchmark(group, "HSET", HSET_CMD);
-            runStableBenchmark(group, "HGET", HGET_CMD);
+            // 1. 测试 LINDEX
+            System.out.println("\n--- Benchmarking LINDEX Tail ---");
+            runStableBenchmark(group, "LINDEX", LINDEX_TAIL_CMD);
 
-            // List
-            runStableBenchmark(group, "LPUSH", LPUSH_CMD);
-            runStableBenchmark(group, "LRANGE", LRANGE_CMD);
-
-            // Set
-            runStableBenchmark(group, "SADD", SADD_CMD);
-            runStableBenchmark(group, "SISMEMBER", SISMEMBER_CMD);
-
-            // ZSet
-            runStableBenchmark(group, "ZADD", ZADD_CMD);
-            runStableBenchmark(group, "ZRANGE", ZRANGE_CMD);
+            // 2. 测试 LSET
+            System.out.println("\n--- Benchmarking LSET Tail ---");
+            runStableBenchmark(group, "LSET", LSET_TAIL_CMD);
 
         } finally {
             group.shutdownGracefully();
@@ -91,8 +54,6 @@ public class MiniRedisBenchmark {
     }
 
     private static void runStableBenchmark(EventLoopGroup group, String title, ByteBuf command) throws InterruptedException {
-        System.out.println("\n>>> Benchmarking " + title + " <<<");
-
         // 1. Warmup
         System.out.print("Warming up... ");
         for (int i = 0; i < WARMUP_ROUNDS; i++) {
@@ -106,15 +67,15 @@ public class MiniRedisBenchmark {
         System.out.println("Measuring rounds:");
 
         for (int i = 0; i < MEASURE_ROUNDS; i++) {
-            // 让 Server 稍微喘口气，避免 GC 累积影响下一轮
-            Thread.sleep(200);
+            Thread.sleep(500); // 间隔休息
             double qps = runRound(group, command);
             results.add(qps);
             System.out.printf("Round %d: %.2f QPS%n", i + 1, qps);
         }
 
         // 3. Calculate Stats
-        if (results.size() >= 3) {
+        // 去掉最高最低 (如果轮数够多)
+        if (results.size() >= 5) {
             Collections.sort(results);
             results.remove(0); // 去掉最低
             results.remove(results.size() - 1); // 去掉最高
@@ -153,7 +114,6 @@ public class MiniRedisBenchmark {
     static class BenchmarkHandler extends SimpleChannelInboundHandler<ByteBuf> {
         private final ByteBuf command;
         private final CountDownLatch latch;
-
         private int sent = 0;
         private int received = 0;
 
@@ -170,7 +130,6 @@ public class MiniRedisBenchmark {
         private void flushBatch(ChannelHandlerContext ctx) {
             int batch = Math.min(50, REQUESTS_PER_CLIENT - sent);
             if (batch <= 0) return;
-
             for (int i = 0; i < batch; i++) {
                 ctx.write(command.retainedDuplicate());
                 sent++;

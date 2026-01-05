@@ -1,8 +1,11 @@
 package org.muma.mini.redis.store.structure.impl.dict;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+
+import org.muma.mini.redis.util.MurmurHash3;
 
 /**
  * Redis 风格的渐进式 Rehash 字典
@@ -256,8 +259,25 @@ public class RedisDict<K, V> implements Dict<K, V> {
     // --- 辅助操作 ---
 
     private int hash(Object key) {
-        // 扰动函数，简单处理
-        int h = key.hashCode();
+        int h;
+        if (key instanceof String) {
+            h = MurmurHash3.hash32((String) key);
+        } else if (key instanceof byte[]) {
+            h = MurmurHash3.hash32((byte[]) key);
+        } else if (key instanceof ByteBuffer) {
+            // ByteBuffer 需要特殊处理，不能改变 position
+            // 或者直接用 JDK hashCode (ByteBuffer.hashCode 是基于内容的)
+            // 为了追求极致分布，建议转 byte[] 再 hash，但会有拷贝开销。
+            // 鉴于 ByteBuffer.hashCode 已经很不错了，且 Set 底层用的是 ByteBuffer
+            // 这里我们暂时保留 JDK hashCode 避免拷贝，或者手写一个针对 ByteBuffer 的 Murmur
+            // 这里简单调用 JDK:
+            h = key.hashCode();
+        } else {
+            // 其他类型 fallback 到 JDK hash
+            h = key.hashCode();
+        }
+
+        // 扰动函数 (Murmur 已经很散了，这步甚至可以省略，但加了更保险)
         return (h ^ (h >>> 16));
     }
 

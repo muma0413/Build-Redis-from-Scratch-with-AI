@@ -66,10 +66,10 @@ public class RedisCommandHandler extends SimpleChannelInboundHandler<RedisMessag
         String commandName = cmdNameBulk.asString().toUpperCase(Locale.ROOT);
 
         // 记录日志
-        if (log.isDebugEnabled() || !commandName.equals("INFO")) {
-            String argsLog = Arrays.stream(elements).skip(1).map(this::convertToString).collect(Collectors.joining(", "));
-            log.info("Execute Command: {} args=[{}]", commandName, argsLog);
-        }
+//        if (log.isDebugEnabled() || !commandName.equals("INFO")) {
+//            String argsLog = Arrays.stream(elements).skip(1).map(this::convertToString).collect(Collectors.joining(", "));
+//            log.info("Execute Command: {} args=[{}]", commandName, argsLog);
+//        }
 
         // 【核心修改】所有逻辑提交到 CoreExecutor 单线程执行
         coreExecutor.submit(() -> {
