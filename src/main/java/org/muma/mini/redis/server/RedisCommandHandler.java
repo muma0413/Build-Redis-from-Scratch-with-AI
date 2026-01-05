@@ -66,10 +66,10 @@ public class RedisCommandHandler extends SimpleChannelInboundHandler<RedisMessag
         String commandName = cmdNameBulk.asString().toUpperCase(Locale.ROOT);
 
         // 记录日志
-//        if (log.isDebugEnabled() || !commandName.equals("INFO")) {
-//            String argsLog = Arrays.stream(elements).skip(1).map(this::convertToString).collect(Collectors.joining(", "));
-//            log.info("Execute Command: {} args=[{}]", commandName, argsLog);
-//        }
+        if (log.isDebugEnabled() || !commandName.equals("INFO")) {
+            String argsLog = Arrays.stream(elements).skip(1).map(this::convertToString).collect(Collectors.joining(", "));
+            log.info("Execute Command: {} args=[{}]", commandName, argsLog);
+        }
 
         // 【核心修改】所有逻辑提交到 CoreExecutor 单线程执行
         coreExecutor.submit(() -> {
@@ -136,16 +136,22 @@ public class RedisCommandHandler extends SimpleChannelInboundHandler<RedisMessag
                 # Replication
                 role:master
                 connected_slaves:0
+                
+                # CPU
+                used_cpu_sys:0.0
+                used_cpu_user:0.0
                 """.formatted(
-                System.getProperty("os.name"),
-                pid,
-                uptime,
-                uptime / (3600 * 24),
-                connectedClients
+                System.getProperty("os.name"),  // %s
+                pid,                            // %d
+                uptime,                         // %d
+                uptime / (3600 * 24),           // %d
+                connectedClients,               // %d (connected_clients)
+                connectedClients                // %d (total_connections_received) 【补上这个】
         );
 
         return new BulkString(info);
     }
+
 
     private RedisMessage handleScanMock(RedisMessage[] elements) {
         // 返回游标 0 和一些假 Key

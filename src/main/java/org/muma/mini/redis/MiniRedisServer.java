@@ -10,6 +10,7 @@ import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
 import org.muma.mini.redis.command.CommandDispatcher;
+import org.muma.mini.redis.config.MiniRedisConfig;
 import org.muma.mini.redis.server.RedisCommandHandler;
 import org.muma.mini.redis.protocol.RespDecoder;
 import org.muma.mini.redis.protocol.RespEncoder;
@@ -65,6 +66,9 @@ public class MiniRedisServer {
     }
 
     public static void main(String[] args) throws InterruptedException {
-        new MiniRedisServer(6379).start();
+        // 1. 初始化配置并解析参数
+        MiniRedisConfig config = MiniRedisConfig.getInstance();
+        config.parseArgs(args);
+        new MiniRedisServer(config.getPort()).start();
     }
 }
