@@ -37,46 +37,44 @@ public class LPopCommand implements RedisCommand {
             }
         }
 
-        synchronized (storage.getLock(key)) {
-            RedisData<?> data = storage.get(key);
+        RedisData<?> data = storage.get(key);
 
-            // Key 不存在
-            if (data == null) {
-                // 如果指定了 count，返回空数组；否则返回 nil
-                return hasCount ? new RedisArray(new RedisMessage[0]) : new BulkString((byte[]) null);
-            }
+        // Key 不存在
+        if (data == null) {
+            // 如果指定了 count，返回空数组；否则返回 nil
+            return hasCount ? new RedisArray(new RedisMessage[0]) : new BulkString((byte[]) null);
+        }
 
-            if (data.getType() != RedisDataType.LIST) {
-                return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
-            }
+        if (data.getType() != RedisDataType.LIST) {
+            return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
+        }
 
-            RedisList list = data.getValue(RedisList.class);
+        RedisList list = data.getValue(RedisList.class);
 
-            // 2. 执行弹出
-            if (hasCount) {
-                // 批量模式：返回 Array
-                List<RedisMessage> result = new ArrayList<>();
-                // 弹出 count 个，或者直到列表为空
-                for (int i = 0; i < count; i++) {
-                    byte[] val = list.lpop();
-                    if (val == null) break; // List 已空
-                    result.add(new BulkString(val));
-                }
-
-                // 清理与回写
-                if (list.size() == 0) storage.remove(key);
-                else storage.put(key, data);
-
-                return new RedisArray(result.toArray(new RedisMessage[0]));
-            } else {
-                // 单个模式：返回 BulkString
+        // 2. 执行弹出
+        if (hasCount) {
+            // 批量模式：返回 Array
+            List<RedisMessage> result = new ArrayList<>();
+            // 弹出 count 个，或者直到列表为空
+            for (int i = 0; i < count; i++) {
                 byte[] val = list.lpop();
-
-                if (list.size() == 0) storage.remove(key);
-                else storage.put(key, data);
-
-                return val == null ? new BulkString((byte[]) null) : new BulkString(val);
+                if (val == null) break; // List 已空
+                result.add(new BulkString(val));
             }
+
+            // 清理与回写
+            if (list.size() == 0) storage.remove(key);
+            else storage.put(key, data);
+
+            return new RedisArray(result.toArray(new RedisMessage[0]));
+        } else {
+            // 单个模式：返回 BulkString
+            byte[] val = list.lpop();
+
+            if (list.size() == 0) storage.remove(key);
+            else storage.put(key, data);
+
+            return val == null ? new BulkString((byte[]) null) : new BulkString(val);
         }
     }
 }

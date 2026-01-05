@@ -36,38 +36,36 @@ public class RPopCommand implements RedisCommand {
             }
         }
 
-        synchronized (storage.getLock(key)) {
-            RedisData<?> data = storage.get(key);
+        RedisData<?> data = storage.get(key);
 
-            if (data == null) {
-                return hasCount ? new RedisArray(new RedisMessage[0]) : new BulkString((byte[]) null);
-            }
-            if (data.getType() != RedisDataType.LIST) {
-                return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
-            }
+        if (data == null) {
+            return hasCount ? new RedisArray(new RedisMessage[0]) : new BulkString((byte[]) null);
+        }
+        if (data.getType() != RedisDataType.LIST) {
+            return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
+        }
 
-            RedisList list = data.getValue(RedisList.class);
+        RedisList list = data.getValue(RedisList.class);
 
-            if (hasCount) {
-                List<RedisMessage> result = new ArrayList<>();
-                for (int i = 0; i < count; i++) {
-                    byte[] val = list.rpop();
-                    if (val == null) break;
-                    result.add(new BulkString(val));
-                }
-
-                if (list.size() == 0) storage.remove(key);
-                else storage.put(key, data);
-
-                return new RedisArray(result.toArray(new RedisMessage[0]));
-            } else {
+        if (hasCount) {
+            List<RedisMessage> result = new ArrayList<>();
+            for (int i = 0; i < count; i++) {
                 byte[] val = list.rpop();
-
-                if (list.size() == 0) storage.remove(key);
-                else storage.put(key, data);
-
-                return val == null ? new BulkString((byte[]) null) : new BulkString(val);
+                if (val == null) break;
+                result.add(new BulkString(val));
             }
+
+            if (list.size() == 0) storage.remove(key);
+            else storage.put(key, data);
+
+            return new RedisArray(result.toArray(new RedisMessage[0]));
+        } else {
+            byte[] val = list.rpop();
+
+            if (list.size() == 0) storage.remove(key);
+            else storage.put(key, data);
+
+            return val == null ? new BulkString((byte[]) null) : new BulkString(val);
         }
     }
 }

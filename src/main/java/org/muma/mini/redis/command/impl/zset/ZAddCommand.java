@@ -25,7 +25,7 @@ import org.muma.mini.redis.store.StorageEngine;
  */
 public class ZAddCommand implements RedisCommand {
     @Override
-    public RedisMessage execute(StorageEngine storage,RedisArray args, RedisContext context) {
+    public RedisMessage execute(StorageEngine storage, RedisArray args, RedisContext context) {
         RedisMessage[] elements = args.elements();
 
         // 参数校验: ZADD key score member... (长度至少为 4，且减去命令名和Key后必须是偶数)
@@ -37,47 +37,45 @@ public class ZAddCommand implements RedisCommand {
         int addedCount = 0;
 
         // 原子性锁
-        synchronized (storage.getLock(key)) {
-            // 1. 获取数据 (使用通配符泛型)
-            RedisData<?> data = storage.get(key);
-            RedisZSet zset;
+        // 1. 获取数据 (使用通配符泛型)
+        RedisData<?> data = storage.get(key);
+        RedisZSet zset;
 
-            if (data == null) {
-                // 新建 ZSet
-                zset = new RedisZSet();
-                // 构造泛型 RedisData
-                data = new RedisData<>(RedisDataType.ZSET, zset);
-            } else {
-                // 类型检查
-                if (data.getType() != RedisDataType.ZSET) {
-                    return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
-                }
-                // 安全获取
-                zset = data.getValue(RedisZSet.class);
+        if (data == null) {
+            // 新建 ZSet
+            zset = new RedisZSet();
+            // 构造泛型 RedisData
+            data = new RedisData<>(RedisDataType.ZSET, zset);
+        } else {
+            // 类型检查
+            if (data.getType() != RedisDataType.ZSET) {
+                return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
             }
-
-            // 2. 循环处理每对 score-member
-            for (int i = 2; i < elements.length; i += 2) {
-                double score;
-                try {
-                    String scoreStr = ((BulkString) elements[i]).asString();
-                    score = Double.parseDouble(scoreStr);
-                    if (Double.isNaN(score)) throw new NumberFormatException("NaN");
-                } catch (NumberFormatException e) {
-                    return new ErrorMessage("ERR value is not a valid float");
-                }
-
-                String member = ((BulkString) elements[i + 1]).asString();
-
-                // add 方法内部会自动处理 ZipList -> SkipList 的升级
-                addedCount += zset.add(score, member);
-            }
-
-            // 3. 回写 Storage (触发潜在的持久化/更新逻辑)
-            // 这里我们需要显式转型或重新构造，为了安全建议复用 data 对象引用
-            // 如果 data 是新创建的，需要 put；如果是旧的，put 也是为了语义闭环
-            storage.put(key, data);
+            // 安全获取
+            zset = data.getValue(RedisZSet.class);
         }
+
+        // 2. 循环处理每对 score-member
+        for (int i = 2; i < elements.length; i += 2) {
+            double score;
+            try {
+                String scoreStr = ((BulkString) elements[i]).asString();
+                score = Double.parseDouble(scoreStr);
+                if (Double.isNaN(score)) throw new NumberFormatException("NaN");
+            } catch (NumberFormatException e) {
+                return new ErrorMessage("ERR value is not a valid float");
+            }
+
+            String member = ((BulkString) elements[i + 1]).asString();
+
+            // add 方法内部会自动处理 ZipList -> SkipList 的升级
+            addedCount += zset.add(score, member);
+        }
+
+        // 3. 回写 Storage (触发潜在的持久化/更新逻辑)
+        // 这里我们需要显式转型或重新构造，为了安全建议复用 data 对象引用
+        // 如果 data 是新创建的，需要 put；如果是旧的，put 也是为了语义闭环
+        storage.put(key, data);
 
         return new RedisInteger(addedCount);
     }

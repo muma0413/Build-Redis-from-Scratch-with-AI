@@ -25,34 +25,32 @@ public class IncrByCommand implements RedisCommand {
             return errorInt();
         }
 
-        synchronized (storage.getLock(key)) {
-            RedisData<?> data = storage.get(key);
-            long val = 0;
+        RedisData<?> data = storage.get(key);
+        long val = 0;
 
-            if (data != null) {
-                if (data.getType() != RedisDataType.STRING) {
-                    return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
-                }
-                try {
-                    byte[] bytes = data.getValue(byte[].class);
-                    String strVal = new String(bytes, StandardCharsets.UTF_8);
-                    val = Long.parseLong(strVal);
-                } catch (NumberFormatException e) {
-                    return errorInt(); // 字符串不是整数
-                }
+        if (data != null) {
+            if (data.getType() != RedisDataType.STRING) {
+                return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
             }
-
-            // 核心运算
-            val += increment; // 支持负数，所以 DECRBY 其实也可以用这个逻辑
-
-            String newValStr = String.valueOf(val);
-            RedisData<byte[]> newData = new RedisData<>(RedisDataType.STRING, newValStr.getBytes(StandardCharsets.UTF_8));
-
-            // 继承 TTL
-            if (data != null) newData.setExpireAt(data.getExpireAt());
-
-            storage.put(key, newData);
-            return new RedisInteger(val);
+            try {
+                byte[] bytes = data.getValue(byte[].class);
+                String strVal = new String(bytes, StandardCharsets.UTF_8);
+                val = Long.parseLong(strVal);
+            } catch (NumberFormatException e) {
+                return errorInt(); // 字符串不是整数
+            }
         }
+
+        // 核心运算
+        val += increment; // 支持负数，所以 DECRBY 其实也可以用这个逻辑
+
+        String newValStr = String.valueOf(val);
+        RedisData<byte[]> newData = new RedisData<>(RedisDataType.STRING, newValStr.getBytes(StandardCharsets.UTF_8));
+
+        // 继承 TTL
+        if (data != null) newData.setExpireAt(data.getExpireAt());
+
+        storage.put(key, newData);
+        return new RedisInteger(val);
     }
 }

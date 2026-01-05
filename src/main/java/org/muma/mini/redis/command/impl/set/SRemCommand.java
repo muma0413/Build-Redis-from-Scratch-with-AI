@@ -21,25 +21,23 @@ public class SRemCommand implements RedisCommand {
         RedisMessage[] elements = args.elements();
         int removedCount = 0;
 
-        synchronized (storage.getLock(key)) {
-            RedisData<?> data = storage.get(key);
-            if (data == null) return new RedisInteger(0);
-            if (data.getType() != RedisDataType.SET)
-                return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
+        RedisData<?> data = storage.get(key);
+        if (data == null) return new RedisInteger(0);
+        if (data.getType() != RedisDataType.SET)
+            return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
 
-            RedisSet set = data.getValue(RedisSet.class);
+        RedisSet set = data.getValue(RedisSet.class);
 
-            for (int i = 2; i < elements.length; i++) {
-                byte[] member = ((BulkString) elements[i]).content();
-                removedCount += set.remove(member);
-            }
+        for (int i = 2; i < elements.length; i++) {
+            byte[] member = ((BulkString) elements[i]).content();
+            removedCount += set.remove(member);
+        }
 
-            if (set.size() == 0) {
-                storage.remove(key);
-            } else {
-                // 显式回写
-                storage.put(key, data);
-            }
+        if (set.size() == 0) {
+            storage.remove(key);
+        } else {
+            // 显式回写
+            storage.put(key, data);
         }
         return new RedisInteger(removedCount);
     }

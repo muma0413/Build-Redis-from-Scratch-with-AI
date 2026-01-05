@@ -14,7 +14,7 @@ import org.muma.mini.redis.store.structure.impl.zset.RangeSpec;
  */
 public class ZRemRangeByScoreCommand implements RedisCommand {
     @Override
-    public RedisMessage execute(StorageEngine storage,RedisArray args, RedisContext context) {
+    public RedisMessage execute(StorageEngine storage, RedisArray args, RedisContext context) {
         if (args.elements().length != 4) return errorArgs("zremrangebyscore");
 
         String key = ((BulkString) args.elements()[1]).asString();
@@ -28,19 +28,17 @@ public class ZRemRangeByScoreCommand implements RedisCommand {
             return new ErrorMessage("ERR value is not a valid float");
         }
 
-        synchronized (storage.getLock(key)) {
-            RedisData<?> data = storage.get(key);
-            if (data == null) return new RedisInteger(0);
-            if (data.getType() != RedisDataType.ZSET)
-                return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
+        RedisData<?> data = storage.get(key);
+        if (data == null) return new RedisInteger(0);
+        if (data.getType() != RedisDataType.ZSET)
+            return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
 
-            RedisZSet zset = data.getValue(RedisZSet.class);
-            int removed = zset.removeRangeByScore(range);
+        RedisZSet zset = data.getValue(RedisZSet.class);
+        int removed = zset.removeRangeByScore(range);
 
-            if (zset.size() == 0) storage.remove(key);
-            else storage.put(key, data);
+        if (zset.size() == 0) storage.remove(key);
+        else storage.put(key, data);
 
-            return new RedisInteger(removed);
-        }
+        return new RedisInteger(removed);
     }
 }

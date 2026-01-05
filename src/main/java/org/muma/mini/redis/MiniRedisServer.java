@@ -10,9 +10,10 @@ import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
 import org.muma.mini.redis.command.CommandDispatcher;
-import org.muma.mini.redis.protocol.RedisCommandHandler;
+import org.muma.mini.redis.server.RedisCommandHandler;
 import org.muma.mini.redis.protocol.RespDecoder;
 import org.muma.mini.redis.protocol.RespEncoder;
+import org.muma.mini.redis.server.RedisCoreExecutor;
 import org.muma.mini.redis.store.impl.MemoryStorageEngine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,6 +33,7 @@ public class MiniRedisServer {
 
         // 1. 在外面初始化单例
         CommandDispatcher dispatcher = new CommandDispatcher(new MemoryStorageEngine());
+        RedisCoreExecutor coreExecutor = new RedisCoreExecutor(); // 【新增】
 
         try {
             var bootstrap = new ServerBootstrap();
@@ -45,7 +47,7 @@ public class MiniRedisServer {
                             ch.pipeline()
                                     .addLast(new RespDecoder())
                                     .addLast(new RespEncoder())
-                                    .addLast(new RedisCommandHandler(dispatcher));
+                                    .addLast(new RedisCommandHandler(dispatcher, coreExecutor));
                         }
                     });
 

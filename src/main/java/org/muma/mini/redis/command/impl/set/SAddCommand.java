@@ -17,27 +17,25 @@ public class SAddCommand implements RedisCommand {
         String key = ((BulkString) elements[1]).asString();
         int addedCount = 0;
 
-        synchronized (storage.getLock(key)) {
-            RedisData<?> data = storage.get(key);
-            RedisSet set;
+        RedisData<?> data = storage.get(key);
+        RedisSet set;
 
-            if (data == null) {
-                set = new RedisSet();
-                data = new RedisData<>(RedisDataType.SET, set);
-            } else {
-                if (data.getType() != RedisDataType.SET) {
-                    return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
-                }
-                set = data.getValue(RedisSet.class);
+        if (data == null) {
+            set = new RedisSet();
+            data = new RedisData<>(RedisDataType.SET, set);
+        } else {
+            if (data.getType() != RedisDataType.SET) {
+                return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
             }
-
-            for (int i = 2; i < elements.length; i++) {
-                byte[] member = ((BulkString) elements[i]).content();
-                addedCount += set.add(member);
-            }
-
-            storage.put(key, data);
+            set = data.getValue(RedisSet.class);
         }
+
+        for (int i = 2; i < elements.length; i++) {
+            byte[] member = ((BulkString) elements[i]).content();
+            addedCount += set.add(member);
+        }
+
+        storage.put(key, data);
 
         return new RedisInteger(addedCount);
     }

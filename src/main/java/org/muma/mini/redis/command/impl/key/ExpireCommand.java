@@ -41,25 +41,22 @@ public class ExpireCommand implements RedisCommand {
                 }
             }
         }
-
-        synchronized (storage.getLock(key)) {
-            RedisData<?> data = storage.get(key);
-            if (data == null) {
-                return new RedisInteger(0);
-            }
-
-            long currentExpire = data.getExpireAt();
-            long newExpire = System.currentTimeMillis() + (seconds * 1000);
-
-            // 检查条件
-            if (nx && currentExpire != -1) return new RedisInteger(0); // 已有过期，NX 失败
-            if (xx && currentExpire == -1) return new RedisInteger(0); // 无过期，XX 失败
-            if (gt && (currentExpire == -1 || newExpire <= currentExpire)) return new RedisInteger(0); // 不大于，GT 失败
-            if (lt && currentExpire != -1 && newExpire >= currentExpire) return new RedisInteger(0); // 不小于，LT 失败
-
-            data.setExpireAt(newExpire);
-            storage.put(key, data);
+        RedisData<?> data = storage.get(key);
+        if (data == null) {
+            return new RedisInteger(0);
         }
+
+        long currentExpire = data.getExpireAt();
+        long newExpire = System.currentTimeMillis() + (seconds * 1000);
+
+        // 检查条件
+        if (nx && currentExpire != -1) return new RedisInteger(0); // 已有过期，NX 失败
+        if (xx && currentExpire == -1) return new RedisInteger(0); // 无过期，XX 失败
+        if (gt && (currentExpire == -1 || newExpire <= currentExpire)) return new RedisInteger(0); // 不大于，GT 失败
+        if (lt && currentExpire != -1 && newExpire >= currentExpire) return new RedisInteger(0); // 不小于，LT 失败
+
+        data.setExpireAt(newExpire);
+        storage.put(key, data);
 
         return new RedisInteger(1);
     }

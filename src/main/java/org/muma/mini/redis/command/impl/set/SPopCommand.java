@@ -27,35 +27,34 @@ public class SPopCommand implements RedisCommand {
             }
         }
 
-        synchronized (storage.getLock(key)) {
-            RedisData<?> data = storage.get(key);
-            if (data == null) return new BulkString((byte[]) null); // 如果 count>1 应该返回空数组？Redis 3.2+ 是这样的
-            if (data.getType() != RedisDataType.SET) return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
+        RedisData<?> data = storage.get(key);
+        if (data == null) return new BulkString((byte[]) null); // 如果 count>1 应该返回空数组？Redis 3.2+ 是这样的
+        if (data.getType() != RedisDataType.SET)
+            return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
 
-            RedisSet set = data.getValue(RedisSet.class);
+        RedisSet set = data.getValue(RedisSet.class);
 
-            // 如果指定了 count (即使是 1)，返回 Array
-            // 如果没指定 count，返回 BulkString
-            boolean isArrayResult = args.elements().length > 2;
+        // 如果指定了 count (即使是 1)，返回 Array
+        // 如果没指定 count，返回 BulkString
+        boolean isArrayResult = args.elements().length > 2;
 
-            if (!isArrayResult) {
+        if (!isArrayResult) {
+            byte[] val = set.pop();
+            if (set.size() == 0) storage.remove(key);
+            else storage.put(key, data);
+            return val == null ? new BulkString((byte[]) null) : new BulkString(val);
+        } else {
+            int actualCount = Math.min(count, set.size());
+            RedisMessage[] result = new RedisMessage[actualCount];
+            for (int i = 0; i < actualCount; i++) {
                 byte[] val = set.pop();
-                if (set.size() == 0) storage.remove(key);
-                else storage.put(key, (RedisData<RedisSet>) data);
-                return val == null ? new BulkString((byte[])null) : new BulkString(val);
-            } else {
-                int actualCount = Math.min(count, set.size());
-                RedisMessage[] result = new RedisMessage[actualCount];
-                for (int i = 0; i < actualCount; i++) {
-                    byte[] val = set.pop();
-                    result[i] = new BulkString(val);
-                }
-
-                if (set.size() == 0) storage.remove(key);
-                else storage.put(key, (RedisData<RedisSet>) data);
-
-                return new RedisArray(result);
+                result[i] = new BulkString(val);
             }
+
+            if (set.size() == 0) storage.remove(key);
+            else storage.put(key, data);
+
+            return new RedisArray(result);
         }
     }
 }

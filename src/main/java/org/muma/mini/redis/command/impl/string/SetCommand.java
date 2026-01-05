@@ -15,7 +15,7 @@ public class SetCommand implements RedisCommand {
     private static final String OK = "OK";
 
     @Override
-    public RedisMessage execute(StorageEngine storage,RedisArray args, RedisContext context) {
+    public RedisMessage execute(StorageEngine storage, RedisArray args, RedisContext context) {
         // 基本格式: SET key value [NX|XX] [EX seconds | PX milliseconds]
         RedisMessage[] elements = args.elements();
         if (elements.length < 3) {
@@ -76,24 +76,22 @@ public class SetCommand implements RedisCommand {
         // 但 NX/XX 这种 check-and-set 逻辑，如果不加锁，在 MemoryStorageEngine 中可能存在竞态。
         // 既然是 Mini-Redis，我们可以先用 synchronized(storage) 或 storage.getLock(key) 锁住
 
-        synchronized (storage.getLock(key)) {
-            RedisData<?> existing = storage.get(key);
+        RedisData<?> existing = storage.get(key);
 
-            if (nx && existing != null) {
-                return new BulkString((byte[]) null); // Key 存在，NX 条件不满足，返回 Nil
-            }
-            if (xx && existing == null) {
-                return new BulkString((byte[]) null); // Key 不存在，XX 条件不满足，返回 Nil
-            }
-
-            // --- 3. 写入阶段 ---
-            RedisData<byte[]> newData = new RedisData<>(RedisDataType.STRING, value);
-            if (expireAt != -1) {
-                newData.setExpireAt(expireAt);
-            }
-
-            storage.put(key, newData);
+        if (nx && existing != null) {
+            return new BulkString((byte[]) null); // Key 存在，NX 条件不满足，返回 Nil
         }
+        if (xx && existing == null) {
+            return new BulkString((byte[]) null); // Key 不存在，XX 条件不满足，返回 Nil
+        }
+
+        // --- 3. 写入阶段 ---
+        RedisData<byte[]> newData = new RedisData<>(RedisDataType.STRING, value);
+        if (expireAt != -1) {
+            newData.setExpireAt(expireAt);
+        }
+
+        storage.put(key, newData);
 
         return new SimpleString(OK);
     }

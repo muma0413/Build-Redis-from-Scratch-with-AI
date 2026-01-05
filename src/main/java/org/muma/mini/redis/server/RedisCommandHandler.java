@@ -1,8 +1,9 @@
-package org.muma.mini.redis.protocol;
+package org.muma.mini.redis.server;
 
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import org.muma.mini.redis.command.CommandDispatcher;
+import org.muma.mini.redis.protocol.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,10 +22,12 @@ public class RedisCommandHandler extends SimpleChannelInboundHandler<RedisMessag
 
     // 【修改点 1】持有单例 Dispatcher
     private final CommandDispatcher dispatcher;
+    private final RedisCoreExecutor coreExecutor; // 【新增】
 
     // 【修改点 2】构造函数接收单例 Dispatcher
-    public RedisCommandHandler(CommandDispatcher dispatcher) {
+    public RedisCommandHandler(CommandDispatcher dispatcher, RedisCoreExecutor coreExecutor) {
         this.dispatcher = dispatcher;
+        this.coreExecutor = coreExecutor;
     }
 
     @Override
@@ -63,38 +66,35 @@ public class RedisCommandHandler extends SimpleChannelInboundHandler<RedisMessag
         String commandName = cmdNameBulk.asString().toUpperCase(Locale.ROOT);
 
         // 记录日志
-        if (log.isDebugEnabled() || !commandName.equals("INFO")) {
-            String argsLog = Arrays.stream(elements).skip(1).map(this::convertToString).collect(Collectors.joining(", "));
-            log.info("Execute Command: {} args=[{}]", commandName, argsLog);
-        }
+//        if (log.isDebugEnabled() || !commandName.equals("INFO")) {
+//            String argsLog = Arrays.stream(elements).skip(1).map(this::convertToString).collect(Collectors.joining(", "));
+//            log.info("Execute Command: {} args=[{}]", commandName, argsLog);
+//        }
 
-        try {
-            RedisMessage response = switch (commandName) {
-                // 特殊连接管理命令，可以在这里拦截，也可以全部下沉到 Dispatcher
-                case "PING" -> new SimpleString("PONG");
-                case "ECHO" -> handleEcho(elements);
-                case "QUIT" -> {
-                    ctx.close();
-                    yield null;
+        // 【核心修改】所有逻辑提交到 CoreExecutor 单线程执行
+        coreExecutor.submit(() -> {
+            try {
+                RedisMessage response = switch (commandName) {
+                    case "PING" -> new SimpleString("PONG");
+                    case "ECHO" -> handleEcho(elements);
+                    case "QUIT" -> {
+                        ctx.close();
+                        yield null;
+                    }
+                    case "COMMAND" -> new SimpleString("OK");
+                    case "SCAN" -> handleScanMock(elements);
+                    case "INFO" -> handleInfo(elements);
+                    default -> dispatcher.dispatch(commandName, array, ctx);
+                };
+
+                if (response != null) {
+                    ctx.writeAndFlush(response);
                 }
-
-                // 元数据 Mock 命令 (你可以选择保留在这里，或者写成 Command 类注册进 Dispatcher)
-                case "COMMAND" -> new SimpleString("OK"); // 简单 Mock，防止客户端报错
-                case "SCAN" -> handleScanMock(elements);
-                case "INFO" -> handleInfo(elements);
-
-                // 【核心修改】其余所有数据命令，交给单例 Dispatcher
-                default -> dispatcher.dispatch(commandName, array, ctx);
-            };
-
-            // 如果返回 null (如 BLPOP 阻塞中)，则不写回
-            if (response != null) {
-                ctx.writeAndFlush(response);
+            } catch (Exception e) {
+                log.error("Error processing command {}", commandName, e);
+                ctx.writeAndFlush(new ErrorMessage("ERR internal error"));
             }
-        } catch (Exception e) {
-            log.error("Error processing command {}", commandName, e);
-            ctx.writeAndFlush(new ErrorMessage("ERR internal error"));
-        }
+        });
     }
 
     // --- Mock 处理逻辑 ---

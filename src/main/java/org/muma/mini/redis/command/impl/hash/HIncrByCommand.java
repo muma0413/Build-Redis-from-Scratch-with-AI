@@ -29,39 +29,37 @@ public class HIncrByCommand implements RedisCommand {
             return new ErrorMessage("ERR value is not an integer or out of range");
         }
 
-        synchronized (storage.getLock(key)) {
-            RedisData<?> data = storage.get(key);
-            RedisHash hash;
+        RedisData<?> data = storage.get(key);
+        RedisHash hash;
 
-            if (data == null) {
-                hash = new RedisHash();
-                data = new RedisData<>(RedisDataType.HASH, hash);
-            } else {
-                if (data.getType() != RedisDataType.HASH)
-                    return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
-                hash = data.getValue(RedisHash.class);
-            }
-
-            // 1. 获取旧值
-            byte[] oldBytes = hash.get(field);
-            long oldVal = 0;
-            if (oldBytes != null) {
-                try {
-                    oldVal = Long.parseLong(new String(oldBytes, StandardCharsets.UTF_8));
-                } catch (NumberFormatException e) {
-                    return new ErrorMessage("ERR hash value is not an integer");
-                }
-            }
-
-            // 2. 计算新值
-            long newVal = oldVal + increment;
-
-            // 3. 存回 (会自动触发 ZipList -> HashTable 升级检查，虽然 long 很难超过 64字节)
-            hash.put(field, String.valueOf(newVal).getBytes(StandardCharsets.UTF_8));
-
-            storage.put(key, data); // 闭环回写
-
-            return new RedisInteger(newVal);
+        if (data == null) {
+            hash = new RedisHash();
+            data = new RedisData<>(RedisDataType.HASH, hash);
+        } else {
+            if (data.getType() != RedisDataType.HASH)
+                return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
+            hash = data.getValue(RedisHash.class);
         }
+
+        // 1. 获取旧值
+        byte[] oldBytes = hash.get(field);
+        long oldVal = 0;
+        if (oldBytes != null) {
+            try {
+                oldVal = Long.parseLong(new String(oldBytes, StandardCharsets.UTF_8));
+            } catch (NumberFormatException e) {
+                return new ErrorMessage("ERR hash value is not an integer");
+            }
+        }
+
+        // 2. 计算新值
+        long newVal = oldVal + increment;
+
+        // 3. 存回 (会自动触发 ZipList -> HashTable 升级检查，虽然 long 很难超过 64字节)
+        hash.put(field, String.valueOf(newVal).getBytes(StandardCharsets.UTF_8));
+
+        storage.put(key, data); // 闭环回写
+
+        return new RedisInteger(newVal);
     }
 }

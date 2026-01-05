@@ -27,20 +27,18 @@ public class ZRemRangeByRankCommand implements RedisCommand {
             return errorInt();
         }
 
-        synchronized (storage.getLock(key)) {
-            RedisData<?> data = storage.get(key);
+        RedisData<?> data = storage.get(key);
 
-            if (data == null) return new RedisInteger(0);
-            if (data.getType() != RedisDataType.ZSET)
-                return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
+        if (data == null) return new RedisInteger(0);
+        if (data.getType() != RedisDataType.ZSET)
+            return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
 
-            RedisZSet zset = data.getValue(RedisZSet.class);
-            int removed = zset.removeRange(start, stop);
+        RedisZSet zset = data.getValue(RedisZSet.class);
+        int removed = zset.removeRange(start, stop);
 
-            if (zset.size() == 0) storage.remove(key);
-            else storage.put(key, data);
+        if (zset.size() == 0) storage.remove(key);
+        else storage.put(key, data);
 
-            return new RedisInteger(removed);
-        }
+        return new RedisInteger(removed);
     }
 }

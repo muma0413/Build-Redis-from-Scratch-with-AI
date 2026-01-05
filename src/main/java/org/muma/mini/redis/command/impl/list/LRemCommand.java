@@ -34,32 +34,30 @@ public class LRemCommand implements RedisCommand {
         }
         byte[] element = ((BulkString) args.elements()[3]).content();
 
-        synchronized (storage.getLock(key)) {
-            // 1. 获取数据
-            RedisData<?> data = storage.get(key);
+        // 1. 获取数据
+        RedisData<?> data = storage.get(key);
 
-            // Key 不存在，视为空列表，删除 0 个
-            if (data == null) return new RedisInteger(0);
+        // Key 不存在，视为空列表，删除 0 个
+        if (data == null) return new RedisInteger(0);
 
-            // 类型检查
-            if (data.getType() != RedisDataType.LIST) {
-                return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
-            }
-
-            RedisList list = data.getValue(RedisList.class);
-
-            // 2. 核心操作: 调用 QuickList 的 remove 逻辑
-            int removedCount = list.remove(count, element);
-
-            // 3. 后置处理: 如果 List 空了，删除 Key
-            if (list.size() == 0) {
-                storage.remove(key);
-            } else {
-                // 显式回写，保持语义闭环
-                storage.put(key, data);
-            }
-
-            return new RedisInteger(removedCount);
+        // 类型检查
+        if (data.getType() != RedisDataType.LIST) {
+            return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
         }
+
+        RedisList list = data.getValue(RedisList.class);
+
+        // 2. 核心操作: 调用 QuickList 的 remove 逻辑
+        int removedCount = list.remove(count, element);
+
+        // 3. 后置处理: 如果 List 空了，删除 Key
+        if (list.size() == 0) {
+            storage.remove(key);
+        } else {
+            // 显式回写，保持语义闭环
+            storage.put(key, data);
+        }
+
+        return new RedisInteger(removedCount);
     }
 }

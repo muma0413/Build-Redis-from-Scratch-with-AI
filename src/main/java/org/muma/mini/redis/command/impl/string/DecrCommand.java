@@ -19,31 +19,29 @@ public class DecrCommand implements RedisCommand {
 
         String key = ((BulkString) args.elements()[1]).asString();
 
-        synchronized (storage.getLock(key)) {
-            RedisData<?> data = storage.get(key);
-            long val = 0;
+        RedisData<?> data = storage.get(key);
+        long val = 0;
 
-            if (data != null) {
-                if (data.getType() != RedisDataType.STRING) {
-                    return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
-                }
-                try {
-                    byte[] bytes = data.getValue(byte[].class);
-                    String strVal = new String(bytes, StandardCharsets.UTF_8);
-                    val = Long.parseLong(strVal);
-                } catch (NumberFormatException e) {
-                    return errorInt();
-                }
+        if (data != null) {
+            if (data.getType() != RedisDataType.STRING) {
+                return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
             }
-
-            val--; // 核心运算
-
-            String newValStr = String.valueOf(val);
-            RedisData<byte[]> newData = new RedisData<>(RedisDataType.STRING, newValStr.getBytes(StandardCharsets.UTF_8));
-            if (data != null) newData.setExpireAt(data.getExpireAt());
-
-            storage.put(key, newData);
-            return new RedisInteger(val);
+            try {
+                byte[] bytes = data.getValue(byte[].class);
+                String strVal = new String(bytes, StandardCharsets.UTF_8);
+                val = Long.parseLong(strVal);
+            } catch (NumberFormatException e) {
+                return errorInt();
+            }
         }
+
+        val--; // 核心运算
+
+        String newValStr = String.valueOf(val);
+        RedisData<byte[]> newData = new RedisData<>(RedisDataType.STRING, newValStr.getBytes(StandardCharsets.UTF_8));
+        if (data != null) newData.setExpireAt(data.getExpireAt());
+
+        storage.put(key, newData);
+        return new RedisInteger(val);
     }
 }

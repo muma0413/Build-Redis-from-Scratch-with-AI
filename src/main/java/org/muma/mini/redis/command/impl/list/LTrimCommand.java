@@ -30,19 +30,17 @@ public class LTrimCommand implements RedisCommand {
             return errorInt();
         }
 
-        synchronized (storage.getLock(key)) {
-            RedisData<?> data = storage.get(key);
-            if (data == null) return new SimpleString("OK"); // Key 不存在视为成功
-            if (data.getType() != RedisDataType.LIST)
-                return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
+        RedisData<?> data = storage.get(key);
+        if (data == null) return new SimpleString("OK"); // Key 不存在视为成功
+        if (data.getType() != RedisDataType.LIST)
+            return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
 
-            RedisList list = data.getValue(RedisList.class);
-            list.trim(start, stop);
+        RedisList list = data.getValue(RedisList.class);
+        list.trim(start, stop);
 
-            if (list.size() == 0) storage.remove(key);
-            else storage.put(key, data);
+        if (list.size() == 0) storage.remove(key);
+        else storage.put(key, data);
 
-            return new SimpleString("OK");
-        }
+        return new SimpleString("OK");
     }
 }

@@ -10,7 +10,7 @@ import org.muma.mini.redis.store.StorageEngine;
 
 /**
  * LSET key index element
- *
+ * <p>
  * 【时间复杂度】 O(N)
  * N 是 index 的偏移量。
  */
@@ -29,24 +29,22 @@ public class LSetCommand implements RedisCommand {
         }
         byte[] element = ((BulkString) args.elements()[3]).content();
 
-        synchronized (storage.getLock(key)) {
-            RedisData<?> data = storage.get(key);
-            if (data == null) return new ErrorMessage("ERR no such key");
-            if (data.getType() != RedisDataType.LIST) {
-                return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
-            }
-
-            RedisList list = data.getValue(RedisList.class);
-            try {
-                list.set(index, element);
-            } catch (IndexOutOfBoundsException e) {
-                return new ErrorMessage("ERR index out of range");
-            }
-
-            // 显式回写
-            storage.put(key, data);
-
-            return new SimpleString("OK");
+        RedisData<?> data = storage.get(key);
+        if (data == null) return new ErrorMessage("ERR no such key");
+        if (data.getType() != RedisDataType.LIST) {
+            return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
         }
+
+        RedisList list = data.getValue(RedisList.class);
+        try {
+            list.set(index, element);
+        } catch (IndexOutOfBoundsException e) {
+            return new ErrorMessage("ERR index out of range");
+        }
+
+        // 显式回写
+        storage.put(key, data);
+
+        return new SimpleString("OK");
     }
 }

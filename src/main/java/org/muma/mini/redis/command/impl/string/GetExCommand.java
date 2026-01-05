@@ -89,39 +89,37 @@ public class GetExCommand implements RedisCommand {
         }
 
         // --- 2. 执行阶段 ---
-        synchronized (storage.getLock(key)) {
-            RedisData<?> data = storage.get(key);
+        RedisData<?> data = storage.get(key);
 
-            // Key 不存在 -> nil
-            if (data == null) {
-                return new BulkString((byte[]) null);
-            }
-
-            // 类型检查
-            if (data.getType() != RedisDataType.STRING) {
-                return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
-            }
-
-            // 修改 TTL (如果需要)
-            if (newExpireAt != -2) {
-                // 如果计算出的 expireAt 已经过期了 (针对 EXAT 传过去时间的情况)
-                if (newExpireAt > 0 && newExpireAt <= System.currentTimeMillis()) {
-                    storage.remove(key); // 立即删除
-                    return new BulkString((byte[]) null); // GETEX 如果导致 key 删除，应该返回什么？
-                    // Redis 规范：GETEX 总是返回旧值，即使它导致了 Key 过期。
-                    // 所以这里我们不能直接删了返回 nil，而应该先拿值，再删。
-                } else {
-                    data.setExpireAt(newExpireAt);
-                    // 显式回写，触发 AOF/Replication
-                    // 注意：这里需要强转，因为 data 是 RedisData<?>
-                    // 但我们已经检查过 type 是 STRING，所以内部是 byte[]
-                    storage.put(key, (RedisData<byte[]>) data);
-                }
-            }
-
-            // 修正后的逻辑：即使刚刚过期了，也应该返回旧值
-            // 但如果上面的逻辑执行了 remove，data 对象还在内存里，可以返回
-            return new BulkString((byte[]) data.getData());
+        // Key 不存在 -> nil
+        if (data == null) {
+            return new BulkString((byte[]) null);
         }
+
+        // 类型检查
+        if (data.getType() != RedisDataType.STRING) {
+            return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
+        }
+
+        // 修改 TTL (如果需要)
+        if (newExpireAt != -2) {
+            // 如果计算出的 expireAt 已经过期了 (针对 EXAT 传过去时间的情况)
+            if (newExpireAt > 0 && newExpireAt <= System.currentTimeMillis()) {
+                storage.remove(key); // 立即删除
+                return new BulkString((byte[]) null); // GETEX 如果导致 key 删除，应该返回什么？
+                // Redis 规范：GETEX 总是返回旧值，即使它导致了 Key 过期。
+                // 所以这里我们不能直接删了返回 nil，而应该先拿值，再删。
+            } else {
+                data.setExpireAt(newExpireAt);
+                // 显式回写，触发 AOF/Replication
+                // 注意：这里需要强转，因为 data 是 RedisData<?>
+                // 但我们已经检查过 type 是 STRING，所以内部是 byte[]
+                storage.put(key, (RedisData<byte[]>) data);
+            }
+        }
+
+        // 修正后的逻辑：即使刚刚过期了，也应该返回旧值
+        // 但如果上面的逻辑执行了 remove，data 对象还在内存里，可以返回
+        return new BulkString((byte[]) data.getData());
     }
 }

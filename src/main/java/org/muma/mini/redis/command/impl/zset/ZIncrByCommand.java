@@ -22,7 +22,7 @@ import org.muma.mini.redis.store.StorageEngine;
  */
 public class ZIncrByCommand implements RedisCommand {
     @Override
-    public RedisMessage execute(StorageEngine storage,RedisArray args, RedisContext context) {
+    public RedisMessage execute(StorageEngine storage, RedisArray args, RedisContext context) {
         // 参数校验
         if (args.elements().length != 4) {
             return errorArgs("zincrby");
@@ -39,32 +39,30 @@ public class ZIncrByCommand implements RedisCommand {
         }
         String member = ((BulkString) args.elements()[3]).asString();
 
-        synchronized (storage.getLock(key)) {
-            // 1. 获取或创建 ZSet
-            RedisData<?> data = storage.get(key);
-            RedisZSet zset;
+        // 1. 获取或创建 ZSet
+        RedisData<?> data = storage.get(key);
+        RedisZSet zset;
 
-            if (data == null) {
-                zset = new RedisZSet();
-                data = new RedisData<>(RedisDataType.ZSET, zset);
-            } else {
-                if (data.getType() != RedisDataType.ZSET) {
-                    return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
-                }
-                zset = data.getValue(RedisZSet.class);
+        if (data == null) {
+            zset = new RedisZSet();
+            data = new RedisData<>(RedisDataType.ZSET, zset);
+        } else {
+            if (data.getType() != RedisDataType.ZSET) {
+                return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
             }
-
-            // 2. 执行自增 (底层自动处理 ZipList/SkipList 逻辑)
-            // 时间复杂度 O(logN)
-            double newScore = zset.incrBy(increment, member);
-
-            // 3. 回写
-            storage.put(key, data);
-
-            // 4. 返回新分数 (BulkString)
-            String scoreStr = (newScore % 1 == 0) ?
-                    String.valueOf((long) newScore) : String.valueOf(newScore);
-            return new BulkString(scoreStr);
+            zset = data.getValue(RedisZSet.class);
         }
+
+        // 2. 执行自增 (底层自动处理 ZipList/SkipList 逻辑)
+        // 时间复杂度 O(logN)
+        double newScore = zset.incrBy(increment, member);
+
+        // 3. 回写
+        storage.put(key, data);
+
+        // 4. 返回新分数 (BulkString)
+        String scoreStr = (newScore % 1 == 0) ?
+                String.valueOf((long) newScore) : String.valueOf(newScore);
+        return new BulkString(scoreStr);
     }
 }

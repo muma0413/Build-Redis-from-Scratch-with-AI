@@ -15,33 +15,31 @@ import org.muma.mini.redis.store.StorageEngine;
  */
 public class RPushCommand implements RedisCommand {
     @Override
-    public RedisMessage execute(StorageEngine storage,RedisArray args, RedisContext context) {
+    public RedisMessage execute(StorageEngine storage, RedisArray args, RedisContext context) {
         RedisMessage[] elements = args.elements();
         if (elements.length < 3) return errorArgs("rpush");
 
         String key = ((BulkString) elements[1]).asString();
 
-        synchronized (storage.getLock(key)) {
-            RedisData<?> data = storage.get(key);
-            RedisList list;
+        RedisData<?> data = storage.get(key);
+        RedisList list;
 
-            if (data == null) {
-                list = new RedisList();
-                data = new RedisData<>(RedisDataType.LIST, list);
-            } else {
-                if (data.getType() != RedisDataType.LIST) {
-                    return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
-                }
-                list = data.getValue(RedisList.class);
+        if (data == null) {
+            list = new RedisList();
+            data = new RedisData<>(RedisDataType.LIST, list);
+        } else {
+            if (data.getType() != RedisDataType.LIST) {
+                return new ErrorMessage("WRONGTYPE Operation against a key holding the wrong kind of value");
             }
-
-            for (int i = 2; i < elements.length; i++) {
-                byte[] val = ((BulkString) elements[i]).content();
-                list.rpush(val);
-            }
-
-            storage.put(key, data);
-            return new RedisInteger(list.size());
+            list = data.getValue(RedisList.class);
         }
+
+        for (int i = 2; i < elements.length; i++) {
+            byte[] val = ((BulkString) elements[i]).content();
+            list.rpush(val);
+        }
+
+        storage.put(key, data);
+        return new RedisInteger(list.size());
     }
 }
