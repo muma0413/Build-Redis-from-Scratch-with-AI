@@ -81,6 +81,19 @@ public class AofManifest {
         return incrAofs.get(incrAofs.size() - 1);
     }
 
+    /**
+     * 清理历史 Incr 文件，只保留最新的一个
+     * (在 Rewrite 成功后调用)
+     */
+    public void pruneHistory() {
+        if (incrAofs.size() > 1) {
+            // 取最后一个 (最新的)
+            AofInfo last = incrAofs.get(incrAofs.size() - 1);
+            incrAofs.clear();
+            incrAofs.add(last);
+        }
+    }
+
     // --- 序列化与反序列化 ---
 
     /**

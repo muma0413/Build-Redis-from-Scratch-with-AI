@@ -26,4 +26,11 @@ public interface StorageEngine {
 
     // 用于内部组件 (如 BlockingManager) 手动传播 AOF
     void appendAof(RedisArray command);
+
+
+    /**
+     * 获取所有 Key 的迭代器 (用于 AOF Rewrite)
+     * 实现必须支持并发遍历 (弱一致性)，不能抛 CME
+     */
+    Iterable<String> keys();
 }

@@ -39,15 +39,15 @@ public class MiniRedisServer {
         // 1. 加载配置
         MiniRedisConfig config = MiniRedisConfig.getInstance();
 
-        // 2. 初始化 AOF Manager 并尝试恢复数据
-        AofManager aofManager = new AofManager(config);
-
-        // 3. 初始化存储
+        // 2. 初始化存储
         MemoryStorageEngine storage = new MemoryStorageEngine();
+
+        // 3. 初始化 AOF Manager 并尝试恢复数据
+        AofManager aofManager = new AofManager(config, storage);
 
         storage.setAofManager(aofManager);
 
-        // 1. 在外面初始化单例
+        // 4. 在外面初始化单例
         CommandDispatcher dispatcher = new CommandDispatcher(storage, aofManager);
 
         // 5. 【关键】AOF 恢复数据 (Replay)

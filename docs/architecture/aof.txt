@@ -1,0 +1,85 @@
+正常写入流程 (Command Execution & Append)
+
+
+[Client]
+| (SEND command)
+v
+[Netty IO Thread]
+| (Decode RESP)
+v
+[RedisCommandHandler]
+| (Submit Task)
+v
+[RedisCoreExecutor] (Single Thread)
+|
++-> [CommandDispatcher.dispatch(cmd)]
+|      |
+|      +-> [RedisCommand.execute()]  (执行业务逻辑)
+|      |      |
+|      |      +-> [StorageEngine.put/remove] (修改内存)
+|      |
+|      +-> [Check: isWrite() && success?]
+|             | (YES)
+|             v
+|          [AofManager.append(cmd)]
+|             |
+|             +-> [RespCodecUtil.encode] (序列化)
+|             |
+|             +-> [AofDiskWriter.write] (非阻塞 Offer)
+|             |      |
+|             |      v
+|             |   [BufferQueue]
+|             |
+|             +-> [checkRewrite()] (触发检查)
+|
+v
+(Next Command)
+
+
+ 后台刷盘流程 (Background Fsync)
+
+ [AofDiskWriter Thread]
+    |
+    +-> (Loop: queue.take())
+    |      |
+    |      +-> [FileChannel.write()] (写入 OS Cache)
+    |      |
+    |      +-> (IF always) -> [force()]
+    |
+    +-> [AofFsyncThread] (Scheduled)
+           |
+           +-> (Every 1s) -> [FileChannel.force()] (落盘)
+
+
+重写流程 (Rewrite Cycle)
+
+[RedisCoreExecutor]
+   |
+   +-> [AofManager.checkRewrite()]
+          |
+          +-> (Condition Met?) -> [triggerRewrite()]
+                 |
+                 +-> [startNewIncrFile()] (切分新 Incr)
+                 |      |
+                 |      +-> Update Manifest (Memory)
+                 |      +-> Save Manifest (Disk)
+                 |
+                 +-> [rewriteExecutor.submit(performRewrite)]
+                        |
+[AofRewriter Thread] <--+
+   |
+   +-> [performRewrite()]
+          |
+          +-> [AofRewriter.rewrite(newBase)]
+          |      |
+          |      +-> [StorageEngine.keys()] (弱一致性遍历)
+          |      +-> [objectToCommand()]
+          |      +-> [BufferedOutputStream.write()]
+          |
+          +-> [synchronized (AofManager)]
+          |      |
+          |      +-> [manifest.setBaseAof()]
+          |      +-> [manifest.pruneHistory()]
+          |      +-> [saveManifest()]
+          |
+          +-> [cleanup()] (删除旧文件)

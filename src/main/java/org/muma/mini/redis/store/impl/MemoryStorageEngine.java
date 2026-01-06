@@ -47,6 +47,12 @@ public class MemoryStorageEngine implements StorageEngine {
         cleanupExecutor.scheduleAtFixedRate(this::activeExpireCycle, 1, 1000, TimeUnit.MILLISECONDS);
     }
 
+    @Override
+    public Iterable<String> keys() {
+        // 直接返回 KeySet，它是线程安全的视图
+        return memoryDb.keySet();
+    }
+
     /**
      * 定期删除策略 (简化版 Redis 算法)
      * 每次抽取一部分 Key 进行检查

@@ -35,6 +35,12 @@ public class MiniRedisConfig {
     private String appendFilename = "appendonly.aof";
     private boolean aofUseRdbPreamble = false;
 
+    // --- Rewrite Config ---
+    // 默认 100% (即大小翻倍时重写)
+    private int aofRewritePercentage = 100;
+    // 默认 64MB (小于这个大小不重写)
+    private long aofRewriteMinSize = 64 * 1024 * 1024;
+
     // --- Enums ---
     public enum AppendFsync {
         ALWAYS, EVERYSEC, NO
@@ -136,6 +142,42 @@ public class MiniRedisConfig {
 
         String preamble = getString(props, "aof-use-rdb-preamble", "no");
         this.aofUseRdbPreamble = "yes".equalsIgnoreCase(preamble);
+
+        // 解析 Rewrite 配置
+        String percentage = getString(props, "auto-aof-rewrite-percentage", "100");
+        try {
+            this.aofRewritePercentage = Integer.parseInt(percentage);
+        } catch (NumberFormatException e) {
+            log.warn("Invalid auto-aof-rewrite-percentage '{}', using default 100.", percentage);
+        }
+
+        String minSize = getString(props, "auto-aof-rewrite-min-size", "64mb");
+        try {
+            this.aofRewriteMinSize = parseSize(minSize);
+        } catch (Exception e) {
+            log.warn("Invalid auto-aof-rewrite-min-size '{}', using default 64MB.", minSize);
+        }
+    }
+
+
+    // 辅助：解析带单位的大小 (64mb, 1gb)
+    private long parseSize(String sizeStr) {
+        if (sizeStr == null) return 64 * 1024 * 1024;
+        String s = sizeStr.toLowerCase().trim();
+        long multiplier = 1;
+        if (s.endsWith("kb")) {
+            multiplier = 1024;
+            s = s.substring(0, s.length() - 2);
+        } else if (s.endsWith("mb")) {
+            multiplier = 1024 * 1024;
+            s = s.substring(0, s.length() - 2);
+        } else if (s.endsWith("gb")) {
+            multiplier = 1024 * 1024 * 1024;
+            s = s.substring(0, s.length() - 2);
+        } else if (s.endsWith("b")) {
+            s = s.substring(0, s.length() - 1);
+        }
+        return Long.parseLong(s.trim()) * multiplier;
     }
 
     private int getInt(Properties props, String key, int defaultValue) {
