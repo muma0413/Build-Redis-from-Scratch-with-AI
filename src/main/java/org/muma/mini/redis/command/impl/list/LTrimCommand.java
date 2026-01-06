@@ -43,4 +43,9 @@ public class LTrimCommand implements RedisCommand {
 
         return new SimpleString("OK");
     }
+
+    @Override
+    public boolean isWrite() {
+        return true;
+    }
 }

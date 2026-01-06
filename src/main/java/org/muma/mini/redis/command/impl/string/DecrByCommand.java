@@ -50,4 +50,9 @@ public class DecrByCommand implements RedisCommand {
         storage.put(key, newData);
         return new RedisInteger(val);
     }
+
+    @Override
+    public boolean isWrite() {
+        return true;
+    }
 }

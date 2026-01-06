@@ -57,4 +57,9 @@ public class SPopCommand implements RedisCommand {
             return new RedisArray(result);
         }
     }
+
+    @Override
+    public boolean isWrite() {
+        return true;
+    }
 }

@@ -34,4 +34,9 @@ public class MSetCommand implements RedisCommand {
 
         return new SimpleString("OK");
     }
+
+    @Override
+    public boolean isWrite() {
+        return true;
+    }
 }

@@ -1,6 +1,7 @@
 package org.muma.mini.redis.store;
 
 import org.muma.mini.redis.common.RedisData;
+import org.muma.mini.redis.protocol.RedisArray;
 import org.muma.mini.redis.server.BlockingManager;
 
 public interface StorageEngine {
@@ -22,4 +23,7 @@ public interface StorageEngine {
     Object getLock(String key);
 
     BlockingManager getBlockingManager();
+
+    // 用于内部组件 (如 BlockingManager) 手动传播 AOF
+    void appendAof(RedisArray command);
 }

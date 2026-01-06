@@ -54,4 +54,9 @@ public class IncrCommand implements RedisCommand {
 
         return new RedisInteger(val);
     }
+
+    @Override
+    public boolean isWrite() {
+        return true;
+    }
 }

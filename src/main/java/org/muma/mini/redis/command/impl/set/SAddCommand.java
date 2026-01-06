@@ -39,4 +39,9 @@ public class SAddCommand implements RedisCommand {
 
         return new RedisInteger(addedCount);
     }
+
+    @Override
+    public boolean isWrite() {
+        return true;
+    }
 }

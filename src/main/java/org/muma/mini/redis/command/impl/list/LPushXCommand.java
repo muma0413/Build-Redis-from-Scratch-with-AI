@@ -46,4 +46,9 @@ public class LPushXCommand implements RedisCommand {
         storage.getBlockingManager().onPush(key, storage);
         return new RedisInteger(list.size());
     }
+
+    @Override
+    public boolean isWrite() {
+        return true;
+    }
 }

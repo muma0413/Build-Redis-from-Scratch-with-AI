@@ -65,4 +65,9 @@ public class ZIncrByCommand implements RedisCommand {
                 String.valueOf((long) newScore) : String.valueOf(newScore);
         return new BulkString(scoreStr);
     }
+
+    @Override
+    public boolean isWrite() {
+        return true;
+    }
 }

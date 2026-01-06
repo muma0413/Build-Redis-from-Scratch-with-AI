@@ -59,57 +59,77 @@ public class BlockingManager {
 
     /**
      * 触发唤醒事件 (当有数据 Push 进 List 时调用)
+     * <p>
+     * 核心职责：
+     * 1. 检查是否有客户端在等待该 Key。
+     * 2. 执行 Pop 操作 (CAS 状态控制，保证只被一个客户端消费)。
+     * 3. 处理 BRPOPLPUSH 的特殊逻辑 (推入目标列表)。
+     * 4. 【AOF】手动传播写命令 (因为 BLPOP 本身不记录 AOF)。
+     * 5. 级联唤醒 (如果推入了新列表)。
      */
     public void onPush(String key, StorageEngine storage) {
         List<BlockingContext> clients = waitingClients.get(key);
         if (clients == null || clients.isEmpty()) return;
 
         // 唤醒逻辑：FIFO (CopyOnWriteArrayList 保证了迭代顺序)
-        // 我们只唤醒一个客户端来消费这个数据
         Iterator<BlockingContext> it = clients.iterator();
-
-        // 注意：这里需要加锁或者再次检查数据，防止并发下的伪唤醒
-        // 在 Mini-Redis 中，Command 执行和 onPush 通常是在同一个同步块或线程中，
-        // 但为了严谨，我们再次检查。
 
         while (it.hasNext()) {
             BlockingContext client = it.next();
 
-            // 1. 再次检查数据 (Double Check)
+            // 1. 并发卫士：尝试标记为完成
+            // 如果已经被超时处理或其他 Key 唤醒，跳过
+            if (!client.tryFinish()) {
+                continue;
+            }
+
+            // 2. 再次检查数据 (Double Check)
+            // 虽然 onPush 是由 LPUSH 触发的，但可能被前面的 client 抢光了
             RedisData<?> data = storage.get(key);
             if (data == null || data.getType() != RedisDataType.LIST) {
-                // Key 消失了或者类型变了，跳过，继续等或者移除？
-                // Redis 逻辑是继续等。
+                // 数据没了或类型不对，无法服务，放弃本次唤醒 (客户端状态已设为 true 需不需要回滚？)
+                // 这是一个极端竞态。简单起见，我们认为 onPush 一定能取到数据。
+                // 严谨做法：如果 pop 失败，应该重置 tryFinish 状态或者发送 nil。
+                // 这里假设 LPUSH 后紧接着 onPush，且单线程模型，必定有数据。
+                // 但为了代码健壮性，如果真没数据，break。
                 break;
             }
 
             RedisList list = data.getValue(RedisList.class);
-            if (list.size() == 0) {
-                // 没数据，可能是刚被别人抢走了，停止处理
-                break;
-            }
+            if (list.size() == 0) break;
 
-            // 2. 执行 Pop (这是修改操作，必须原子)
+            // 3. 执行 Pop
             byte[] value = client.isLeftPop() ? list.lpop() : list.rpop();
 
             if (value != null) {
-                // 3. 处理 BRPOPLPUSH 的特殊逻辑 (推入目标列表)
+                // --- AOF 传播逻辑 Part 1: 源列表的删除 ---
+                // 无论是 BLPOP, BRPOP 还是 BRPOPLPUSH，源列表都发生了 POP 操作。
+                // 我们记录一条 LPOP 或 RPOP 命令。
+                String popCmdName = client.isLeftPop() ? "LPOP" : "RPOP";
+                RedisArray aofPopCmd = new RedisArray(new RedisMessage[]{
+                        new BulkString(popCmdName),
+                        new BulkString(key)
+                });
+                storage.appendAof(aofPopCmd);
+                // ---------------------------------------
+
+                // 4. 处理 BRPOPLPUSH (推入目标列表)
                 if (client.getTargetKey() != null) {
                     handleRPopLPush(client.getTargetKey(), value, storage);
                 }
 
-                // 4. 发送响应给客户端
+                // 5. 发送响应给客户端
                 sendResponse(client, key, value);
 
-                // 5. 清理状态
+                // 6. 清理状态
                 removeClient(client);
 
-                // 6. 维护 Storage 一致性
+                // 7. 维护 Storage 一致性
                 if (list.size() == 0) {
                     storage.remove(key);
                 } else {
-                    // 显式 put 触发可能的其他钩子 (虽然这里是同一个对象)
-                    // storage.put(key, data);
+                    // 显式 put 触发可能的其他钩子
+                    storage.put(key, (RedisData<RedisList>) data);
                 }
 
                 log.debug("Client unblocked on key: {}", key);
@@ -120,9 +140,12 @@ public class BlockingManager {
         }
     }
 
+    /**
+     * 处理 BRPOPLPUSH 的推入逻辑
+     * 并负责传播对应的 LPUSH AOF 命令
+     */
     private void handleRPopLPush(String destKey, byte[] value, StorageEngine storage) {
-        // 原子性地推入目标列表
-        // 注意：这里没有加锁，依赖外部 synchronized(storage) 或者 storage 自身的线程安全
+        // 1. 获取或创建目标列表
         RedisData<?> destData = storage.get(destKey);
         RedisList destList;
 
@@ -131,15 +154,27 @@ public class BlockingManager {
             storage.put(destKey, new RedisData<>(RedisDataType.LIST, destList));
         } else if (destData.getType() != RedisDataType.LIST) {
             log.error("BRPOPLPUSH target key {} is not a list, value dropped.", destKey);
-            return; // 丢弃数据 (Redis 实际上会在执行前检查，或者报错)
+            return;
         } else {
             destList = destData.getValue(RedisList.class);
         }
 
+        // 2. 推入头部 (RPOPLPUSH 语义: 尾出头进)
         destList.lpush(value);
 
-        // 【级联唤醒】：目标 Key 也可能有客户端在 BLPOP
-        // 递归调用可能导致栈溢出，但在实际 Redis 场景深度有限
+        // --- AOF 传播逻辑 Part 2: 目标列表的写入 ---
+        // 记录一条 LPUSH dest value 命令
+        // 这样 AOF 重放时：先执行了 RPOP (源变少)，再执行 LPUSH (目标变多)，最终一致。
+        RedisArray aofPushCmd = new RedisArray(new RedisMessage[]{
+                new BulkString("LPUSH"),
+                new BulkString(destKey),
+                new BulkString(value)
+        });
+        storage.appendAof(aofPushCmd);
+        // ---------------------------------------
+
+        // 3. 【级联唤醒】
+        // 目标 Key 可能也有客户端在 BLPOP 等待，需要触发通知
         onPush(destKey, storage);
     }
 

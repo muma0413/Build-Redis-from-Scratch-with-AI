@@ -95,4 +95,9 @@ public class ZInterStoreCommand extends AbstractZStoreCommand {
 
         return result;
     }
+
+    @Override
+    public boolean isWrite() {
+        return true;
+    }
 }

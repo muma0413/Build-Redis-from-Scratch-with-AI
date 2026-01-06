@@ -53,4 +53,9 @@ public class IncrByCommand implements RedisCommand {
         storage.put(key, newData);
         return new RedisInteger(val);
     }
+
+    @Override
+    public boolean isWrite() {
+        return true;
+    }
 }

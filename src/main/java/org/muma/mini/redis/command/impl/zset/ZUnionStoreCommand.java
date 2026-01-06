@@ -49,4 +49,9 @@ public class ZUnionStoreCommand extends AbstractZStoreCommand {
         }
         return result;
     }
+
+    @Override
+    public boolean isWrite() {
+        return true;
+    }
 }

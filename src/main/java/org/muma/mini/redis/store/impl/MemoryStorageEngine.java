@@ -1,7 +1,10 @@
 package org.muma.mini.redis.store.impl;
 
 import lombok.Getter;
+import lombok.Setter;
+import org.muma.mini.redis.aof.AofManager;
 import org.muma.mini.redis.common.RedisData;
+import org.muma.mini.redis.protocol.RedisArray;
 import org.muma.mini.redis.server.BlockingManager;
 import org.muma.mini.redis.store.StorageEngine;
 import org.slf4j.Logger;
@@ -34,6 +37,10 @@ public class MemoryStorageEngine implements StorageEngine {
 
     @Getter
     private final BlockingManager blockingManager = new BlockingManager();
+
+    @Setter
+    private AofManager aofManager; // 需要 Setter 或者构造注入
+
 
     public MemoryStorageEngine() {
         // 启动定期清理任务：每 1000ms 执行一次
@@ -79,6 +86,13 @@ public class MemoryStorageEngine implements StorageEngine {
 
         // 进阶优化：如果发现过期比例很高 (比如 > 25%)，其实应该立即再次触发清理，
         // 这里为了 Mini-Redis 简单，暂时只做固定频率清理。
+    }
+
+    @Override
+    public void appendAof(RedisArray command) {
+        if (aofManager != null) {
+            aofManager.append(command);
+        }
     }
 
     @Override

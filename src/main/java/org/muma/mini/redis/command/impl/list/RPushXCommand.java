@@ -43,4 +43,9 @@ public class RPushXCommand implements RedisCommand {
 
         return new RedisInteger(list.size());
     }
+
+    @Override
+    public boolean isWrite() {
+        return true;
+    }
 }

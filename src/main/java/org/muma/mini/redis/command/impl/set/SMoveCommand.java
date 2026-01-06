@@ -62,4 +62,9 @@ public class SMoveCommand implements RedisCommand {
             return new RedisInteger(1);
         }
     }
+
+    @Override
+    public boolean isWrite() {
+        return true;
+    }
 }

@@ -62,4 +62,9 @@ public class HIncrByCommand implements RedisCommand {
 
         return new RedisInteger(newVal);
     }
+
+    @Override
+    public boolean isWrite() {
+        return true;
+    }
 }

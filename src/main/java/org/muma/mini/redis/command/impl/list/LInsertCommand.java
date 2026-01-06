@@ -72,4 +72,9 @@ public class LInsertCommand implements RedisCommand {
 
         return new RedisInteger(ret);
     }
+
+    @Override
+    public boolean isWrite() {
+        return true;
+    }
 }

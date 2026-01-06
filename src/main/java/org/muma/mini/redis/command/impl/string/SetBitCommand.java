@@ -74,4 +74,9 @@ public class SetBitCommand implements RedisCommand {
 
         return new RedisInteger(oldBit);
     }
+
+    @Override
+    public boolean isWrite() {
+        return true;
+    }
 }

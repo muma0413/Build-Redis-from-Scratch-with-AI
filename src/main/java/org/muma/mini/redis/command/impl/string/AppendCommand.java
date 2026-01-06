@@ -48,4 +48,9 @@ public class AppendCommand implements RedisCommand {
 
         return new RedisInteger(newBytes.length);
     }
+
+    @Override
+    public boolean isWrite() {
+        return true;
+    }
 }

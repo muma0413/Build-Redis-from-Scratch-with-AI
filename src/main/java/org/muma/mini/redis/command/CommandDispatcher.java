@@ -1,12 +1,14 @@
 package org.muma.mini.redis.command;
 
 import io.netty.channel.ChannelHandlerContext;
+import org.muma.mini.redis.aof.AofManager;
 import org.muma.mini.redis.command.impl.hash.*;
 import org.muma.mini.redis.command.impl.key.*;
 import org.muma.mini.redis.command.impl.list.*;
 import org.muma.mini.redis.command.impl.set.*;
 import org.muma.mini.redis.command.impl.string.*;
 import org.muma.mini.redis.command.impl.zset.*;
+import org.muma.mini.redis.protocol.BulkString;
 import org.muma.mini.redis.protocol.ErrorMessage;
 import org.muma.mini.redis.protocol.RedisArray;
 import org.muma.mini.redis.protocol.RedisMessage;
@@ -28,9 +30,11 @@ public class CommandDispatcher {
 
     private final Map<String, RedisCommand> commandMap = new HashMap<>();
     private final StorageEngine storage;
+    private final AofManager aofManager; // 【新增】
 
-    public CommandDispatcher(StorageEngine storage) {
+    public CommandDispatcher(StorageEngine storage, AofManager aofManager) {
         this.storage = storage;
+        this.aofManager = aofManager;
         this.initCommandRegistry();
     }
 
@@ -154,6 +158,23 @@ public class CommandDispatcher {
         commandMap.put("HMGET", new HMGetCommand());
     }
 
+
+    /**
+     * 重载方法：用于 AOF 重放
+     * 从 RedisArray 中提取命令名并分发
+     */
+    public RedisMessage dispatch(RedisArray args, ChannelHandlerContext ctx) {
+        RedisMessage[] elements = args.elements();
+        if (elements == null || elements.length == 0) return null;
+
+        if (!(elements[0] instanceof BulkString cmdNameBulk)) {
+            return new ErrorMessage("ERR protocol error: command name must be string");
+        }
+
+        String commandName = cmdNameBulk.asString().toUpperCase(Locale.ROOT);
+        return dispatch(commandName, args, ctx);
+    }
+
     /**
      * 核心分发逻辑
      */
@@ -180,6 +201,15 @@ public class CommandDispatcher {
                 log.warn("Slow command detected: {} cost {}ms", commandName, duration);
             } else if (log.isDebugEnabled()) {
                 log.debug("Command executed: {} cost {}ms", commandName, duration);
+            }
+
+            // 【核心 AOF 逻辑】
+            // 1. 命令标记为写操作
+            // 2. 执行没有报错 (不是 ErrorMessage)
+            // 3. AOF 开启中 (Manager 内部会判断)
+            // 4. 注意：这里 args 已经是 RedisArray，可以直接存
+            if (command.isWrite() && !(response instanceof ErrorMessage)) {
+                aofManager.append(args);
             }
 
             return response;

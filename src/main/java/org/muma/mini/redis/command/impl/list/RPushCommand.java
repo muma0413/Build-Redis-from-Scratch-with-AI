@@ -42,4 +42,9 @@ public class RPushCommand implements RedisCommand {
         storage.put(key, data);
         return new RedisInteger(list.size());
     }
+
+    @Override
+    public boolean isWrite() {
+        return true;
+    }
 }

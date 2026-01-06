@@ -68,4 +68,9 @@ public class RPopCommand implements RedisCommand {
             return val == null ? new BulkString((byte[]) null) : new BulkString(val);
         }
     }
+
+    @Override
+    public boolean isWrite() {
+        return true;
+    }
 }

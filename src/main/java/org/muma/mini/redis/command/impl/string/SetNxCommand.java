@@ -30,4 +30,9 @@ public class SetNxCommand implements RedisCommand {
         storage.put(key, data);
         return new RedisInteger(1); // 成功
     }
+
+    @Override
+    public boolean isWrite() {
+        return true;
+    }
 }

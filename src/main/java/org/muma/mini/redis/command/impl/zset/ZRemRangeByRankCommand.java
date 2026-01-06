@@ -41,4 +41,9 @@ public class ZRemRangeByRankCommand implements RedisCommand {
 
         return new RedisInteger(removed);
     }
+
+    @Override
+    public boolean isWrite() {
+        return true;
+    }
 }

@@ -48,4 +48,9 @@ public class HSetCommand implements RedisCommand {
 
         return new RedisInteger(createdCount);
     }
+
+    @Override
+    public boolean isWrite() {
+        return true;
+    }
 }

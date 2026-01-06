@@ -52,4 +52,10 @@ public interface RedisCommand {
         return new ErrorMessage("ERR value is not an integer or out of range");
     }
 
+
+    // 默认不是写命令，所有 SET/HSET 等需要覆盖返回 true
+    default boolean isWrite() {
+        return false;
+    }
+
 }

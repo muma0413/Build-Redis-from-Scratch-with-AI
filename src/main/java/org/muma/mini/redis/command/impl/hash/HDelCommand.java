@@ -46,4 +46,9 @@ public class HDelCommand implements RedisCommand {
 
         return new RedisInteger(deletedCount);
     }
+
+    @Override
+    public boolean isWrite() {
+        return true;
+    }
 }

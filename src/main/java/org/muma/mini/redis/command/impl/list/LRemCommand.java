@@ -60,4 +60,9 @@ public class LRemCommand implements RedisCommand {
 
         return new RedisInteger(removedCount);
     }
+
+    @Override
+    public boolean isWrite() {
+        return true;
+    }
 }
