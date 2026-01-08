@@ -128,6 +128,7 @@ public class CommandDispatcher {
 
     private void registerStringCommands() {
         commandMap.put("SET", new SetCommand());
+        commandMap.put("GETEX", new GetExCommand());
         commandMap.put("GET", new GetCommand());
         commandMap.put("INCR", new IncrCommand());
         commandMap.put("MSET", new MSetCommand());
@@ -141,6 +142,9 @@ public class CommandDispatcher {
         commandMap.put("BITCOUNT", new BitCountCommand());
         commandMap.put("APPEND", new AppendCommand());
         commandMap.put("STRLEN", new StrLenCommand());
+
+        commandMap.put("BITOP", new BitOpCommand());
+        commandMap.put("BITPOS", new BitPosCommand());
     }
 
     private void registerHashCommands() {
