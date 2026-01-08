@@ -6,6 +6,7 @@ import org.muma.mini.redis.common.RedisDataType;
 import org.muma.mini.redis.common.RedisList;
 import org.muma.mini.redis.protocol.*;
 import org.muma.mini.redis.server.RedisContext;
+import org.muma.mini.redis.server.handler.ListBlockingHandler;
 import org.muma.mini.redis.store.StorageEngine;
 
 import java.util.ArrayList;
@@ -80,7 +81,12 @@ public class BLPopCommand implements RedisCommand {
         // 2. 没数据，进入阻塞模式 (Blocking Mode)
         // 注册到 BlockingManager，等待 LPUSH 唤醒
         // targetKey = null (BLPOP 不需要推入其他列表)
-        storage.getBlockingManager().addWait(context.getNettyCtx(), keys, timeout, true, null);
+        storage.getBlockingManager().addWait(
+                context.getNettyCtx(),
+                keys,
+                timeout,
+                new ListBlockingHandler(true, null) // isLeft=true, targetKey=null
+        );
 
         // 返回 null，指示 Handler 暂停响应，保持连接 open
         return null;

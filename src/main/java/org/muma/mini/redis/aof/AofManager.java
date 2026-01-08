@@ -204,7 +204,7 @@ public class AofManager {
      */
     /**
      * 执行 AOF 重写的核心逻辑 (运行在 rewriteExecutor 线程中)
-     *
+     * <p>
      * 流程：
      * 1. 准备新 Base 文件。
      * 2. 执行快照：遍历内存生成指令，写入新 Base。
@@ -297,17 +297,22 @@ public class AofManager {
         if (!dir.exists()) dir.mkdirs();
         File f = new File(dir, "appendonly.aof.manifest");
         if (f.exists()) {
-            // ... (同之前的 load 逻辑) ...
-            // 建议：直接替换引用
             AofManifest loaded = AofManifest.decode(Files.readString(f.toPath()));
-            this.manifest.setBaseAof(
-                    loaded.getBaseAof() != null ? loaded.getBaseAof().filename : null,
-                    loaded.getBaseAof() != null ? loaded.getBaseAof().seq : 0
-            );
-            // 清空并添加
-            this.manifest.getIncrAofs().clear(); // 需要修改 AofManifest 暴露 clear 或者 addAll
-            // 或者：由于 AofManifest 字段是 private final List，我们需要修改 AofManifest 类增加 reload 方法
-            // 这里假设你已经修改了 AofManifest
+
+            // 【修复点】只有当 loaded 确实有 baseAof 时，才设置
+            if (loaded.getBaseAof() != null) {
+                this.manifest.setBaseAof(
+                        loaded.getBaseAof().filename,
+                        loaded.getBaseAof().seq
+                );
+            }
+
+            // 【修复点】使用新方法清空并添加
+            this.manifest.clearIncrAofs(); // 不再直接调 getIncrAofs().clear()
+
+            for (AofManifest.AofInfo info : loaded.getIncrAofs()) {
+                this.manifest.addIncrAof(info.filename, info.seq);
+            }
         }
     }
 

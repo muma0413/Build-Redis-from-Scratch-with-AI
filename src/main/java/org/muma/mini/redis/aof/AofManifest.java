@@ -150,4 +150,11 @@ public class AofManifest {
         }
         return manifest;
     }
+
+    /**
+     * 重置 Incr 列表 (用于加载时覆盖)
+     */
+    public void clearIncrAofs() {
+        this.incrAofs.clear();
+    }
 }

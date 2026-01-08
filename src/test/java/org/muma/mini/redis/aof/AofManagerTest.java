@@ -7,6 +7,8 @@ import org.muma.mini.redis.config.MiniRedisConfig;
 import org.muma.mini.redis.protocol.BulkString;
 import org.muma.mini.redis.protocol.RedisArray;
 import org.muma.mini.redis.protocol.RedisMessage;
+import org.muma.mini.redis.store.StorageEngine;
+import org.muma.mini.redis.store.impl.MemoryStorageEngine;
 
 import java.io.File;
 import java.io.IOException;
@@ -19,6 +21,7 @@ class AofManagerTest {
 
     private static final String TEST_DIR = "target/aof_manager_test";
     private MiniRedisConfig config;
+    private StorageEngine storage;
     private AofManager manager;
 
     @BeforeEach
@@ -31,7 +34,11 @@ class AofManagerTest {
         config.setAppendOnly(true); // 必须开启
         config.setAppendFsync(MiniRedisConfig.AppendFsync.ALWAYS); // 方便测试立即刷盘
 
-        manager = new AofManager(config);
+        // 【新增】初始化 StorageEngine
+        storage = new MemoryStorageEngine();
+
+        // 【修改】传入 storage
+        manager = new AofManager(config, storage);
     }
 
     @AfterEach
@@ -42,13 +49,12 @@ class AofManagerTest {
 
     @Test
     void testInitAndAppend() throws IOException {
-        // 1. 初始化 (应该创建 Manifest 和第一个 Incr 文件)
+        // 1. 初始化
         manager.init();
 
         File manifestFile = new File(TEST_DIR, "appendonly.aof.manifest");
         assertTrue(manifestFile.exists(), "Manifest file should be created");
 
-        // 验证 Manifest 内容
         String manifestContent = Files.readString(manifestFile.toPath());
         assertTrue(manifestContent.contains("file appendonly.aof.1.incr.aof seq 1 type i"));
 
@@ -56,16 +62,16 @@ class AofManagerTest {
         assertTrue(incrFile.exists(), "Incr file should be created");
 
         // 2. 追加命令
-        // SET key val
         RedisArray cmd = new RedisArray(new RedisMessage[]{
                 new BulkString("SET"), new BulkString("key"), new BulkString("val")
         });
         manager.append(cmd);
 
-        // 3. 验证 Incr 文件内容
-        // 此时应该已经落盘 (因为是 ALWAYS 策略)
+        // 3. 验证内容
+        // 等待一下刷盘（虽然是 ALWAYS，但 diskWriter 是异步线程）
+        try { Thread.sleep(50); } catch (InterruptedException ignored) {}
+
         String incrContent = Files.readString(incrFile.toPath());
-        // RESP: *3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$3\r\nval\r\n
         assertTrue(incrContent.contains("*3\r\n$3\r\nSET"));
         assertTrue(incrContent.contains("$3\r\nkey"));
     }
@@ -76,36 +82,33 @@ class AofManagerTest {
         manager.init();
         RedisArray cmd1 = new RedisArray(new RedisMessage[]{ new BulkString("SET"), new BulkString("k1"), new BulkString("v1") });
         manager.append(cmd1);
-        manager.shutdown(); // 关闭，模拟重启
+
+        try { Thread.sleep(50); } catch (InterruptedException ignored) {}
+        manager.shutdown();
 
         // 2. 第二次运行 (重启)
-        AofManager manager2 = new AofManager(config);
-        manager2.init(); // 应该加载 Manifest，发现已经有 seq 1 了
-
-        // 检查是否复用了同一个 Incr 文件，或者创建了新的？
-        // Redis 7.0 策略：重启时通常不会立即滚动 Incr，除非触发 Rewrite。
-        // 我们的简单实现：init() 逻辑里是 "如果 lastIncr 存在，就 open 它"。
-        // 所以应该继续追加到 .1.incr.aof
+        // 【修改】传入 storage
+        AofManager manager2 = new AofManager(config, storage);
+        manager2.init();
 
         RedisArray cmd2 = new RedisArray(new RedisMessage[]{ new BulkString("SET"), new BulkString("k2"), new BulkString("v2") });
         manager2.append(cmd2);
+
+        try { Thread.sleep(50); } catch (InterruptedException ignored) {}
         manager2.shutdown();
 
-        // 3. 验证文件内容
+        // 3. 验证
         File incrFile = new File(TEST_DIR, "appendonly.aof.1.incr.aof");
         assertTrue(incrFile.exists());
 
         String content = Files.readString(incrFile.toPath());
-        // 应该包含两次写入
         assertTrue(content.contains("k1"));
         assertTrue(content.contains("k2"));
 
-        // 验证没有创建多余的文件
         File incrFile2 = new File(TEST_DIR, "appendonly.aof.2.incr.aof");
-        assertFalse(incrFile2.exists(), "Should not create new incr file on simple restart");
+        assertFalse(incrFile2.exists());
     }
 
-    // 递归删除
     private void deleteDir(File file) {
         if (file.isDirectory()) {
             File[] files = file.listFiles();

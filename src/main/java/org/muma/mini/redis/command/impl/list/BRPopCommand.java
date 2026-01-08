@@ -6,6 +6,7 @@ import org.muma.mini.redis.common.RedisDataType;
 import org.muma.mini.redis.common.RedisList;
 import org.muma.mini.redis.protocol.*;
 import org.muma.mini.redis.server.RedisContext;
+import org.muma.mini.redis.server.handler.ListBlockingHandler;
 import org.muma.mini.redis.store.StorageEngine;
 
 import java.util.ArrayList;
@@ -76,9 +77,13 @@ public class BRPopCommand implements RedisCommand {
             }
         }
 
-        // 2. 没数据，进入阻塞模式
-        // isLeftPop = false (RPOP), targetKey = null
-        storage.getBlockingManager().addWait(context.getNettyCtx(), keys, timeout, false, null);
+
+        storage.getBlockingManager().addWait(
+                context.getNettyCtx(),
+                keys,
+                timeout,
+                new ListBlockingHandler(false, null) // isLeft=true, targetKey=null
+        );
 
         return null;
     }
