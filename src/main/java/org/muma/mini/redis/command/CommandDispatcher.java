@@ -2,6 +2,9 @@ package org.muma.mini.redis.command;
 
 import io.netty.channel.ChannelHandlerContext;
 import org.muma.mini.redis.aof.AofManager;
+import org.muma.mini.redis.command.impl.bf.BfAddCommand;
+import org.muma.mini.redis.command.impl.bf.BfExistsCommand;
+import org.muma.mini.redis.command.impl.bf.BfReserveCommand;
 import org.muma.mini.redis.command.impl.hash.*;
 import org.muma.mini.redis.command.impl.key.*;
 import org.muma.mini.redis.command.impl.list.*;
@@ -48,6 +51,7 @@ public class CommandDispatcher {
         registerZsetCommands();
         registerListCommands();
         registerSetCommands();
+        registerBloomCommands();
 
 
         log.info("CommandDispatcher initialized. Total commands registered: {}", commandMap.size());
@@ -124,6 +128,12 @@ public class CommandDispatcher {
         commandMap.put("EXISTS", new ExistsCommand());
         commandMap.put("TTL", new TTLCommand());
         commandMap.put("PTTL", new PTTLCommand());
+    }
+
+    private void registerBloomCommands() {
+        commandMap.put("BF.RESERVE", new BfReserveCommand());
+        commandMap.put("BF.ADD", new BfAddCommand());
+        commandMap.put("BF.EXISTS", new BfExistsCommand());
     }
 
     private void registerStringCommands() {
