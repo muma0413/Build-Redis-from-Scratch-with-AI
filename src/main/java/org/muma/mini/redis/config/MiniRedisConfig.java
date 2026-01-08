@@ -7,6 +7,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 
 /**
@@ -34,6 +36,20 @@ public class MiniRedisConfig {
     private String appendDir = "appendonlydir";
     private String appendFilename = "appendonly.aof";
     private boolean aofUseRdbPreamble = false;
+
+    public static class SaveParam {
+        public long seconds;
+        public int changes;
+
+        public SaveParam(long s, int c) {
+            seconds = s;
+            changes = c;
+        }
+    }
+
+    private List<SaveParam> saveParams = new ArrayList<>();
+    private String rdbFilename = "dump.rdb";
+
 
     // --- Rewrite Config ---
     // 默认 100% (即大小翻倍时重写)
@@ -94,6 +110,18 @@ public class MiniRedisConfig {
 
         // 4. Persistence
         loadPersistenceConfig(props);
+
+        // 解析 save 配置，例如 "900 1 300 10 60 10000"
+        String saveStr = getString(props, "save", "900 1 300 10 60 10000");
+        if (!saveStr.isEmpty()) {
+            String[] parts = saveStr.split("\\s+");
+            for (int i = 0; i < parts.length; i += 2) {
+                saveParams.add(new SaveParam(
+                        Long.parseLong(parts[i]),
+                        Integer.parseInt(parts[i + 1])
+                ));
+            }
+        }
 
         log.info("MiniRedisConfig initialized: {}", this); // 需要 toString()
     }

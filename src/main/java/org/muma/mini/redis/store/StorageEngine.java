@@ -33,4 +33,12 @@ public interface StorageEngine {
      * 实现必须支持并发遍历 (弱一致性)，不能抛 CME
      */
     Iterable<String> keys();
+
+
+    long getDirty();
+
+    long getLastSaveTime();
+
+    void resetDirty(); // 保存成功后调用
+
 }
