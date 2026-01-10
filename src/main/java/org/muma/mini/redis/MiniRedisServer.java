@@ -74,6 +74,19 @@ public class MiniRedisServer {
 
     public static void main(String[] args) throws InterruptedException {
         MiniRedisConfig config = MiniRedisConfig.getInstance();
+
+        // 1. 先简单扫描一遍 args 找 --config
+        String configPath = "redis.properties";
+        for (int i = 0; i < args.length; i++) {
+            if ("--config".equals(args[i]) && i + 1 < args.length) {
+                configPath = args[i + 1];
+                break;
+            }
+        }
+
+        // 2. 加载文件配置
+        config.loadConfig(configPath);
+
         config.parseArgs(args);
         new MiniRedisServer(config.getPort()).start();
     }

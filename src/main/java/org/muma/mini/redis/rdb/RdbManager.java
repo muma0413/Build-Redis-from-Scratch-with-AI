@@ -70,4 +70,15 @@ public class RdbManager {
             log.error("Save failed", e);
         }
     }
+
+    // 新增带回调的方法
+    public void triggerBgsave(java.util.function.Consumer<File> callback) {
+        File file = new File(config.getAppendDir(), config.getRdbFilename());
+        saver.bgsave(file, () -> {
+            // 原有的 resetDirty 逻辑
+            storage.resetDirty();
+            // 新增的回调
+            if (callback != null) callback.accept(file);
+        });
+    }
 }

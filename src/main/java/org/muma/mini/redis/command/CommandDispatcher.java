@@ -8,6 +8,9 @@ import org.muma.mini.redis.command.impl.bf.BfReserveCommand;
 import org.muma.mini.redis.command.impl.hash.*;
 import org.muma.mini.redis.command.impl.key.*;
 import org.muma.mini.redis.command.impl.list.*;
+import org.muma.mini.redis.command.impl.replication.PsyncCommand;
+import org.muma.mini.redis.command.impl.replication.ReplConfCommand;
+import org.muma.mini.redis.command.impl.server.SlaveOfCommand;
 import org.muma.mini.redis.command.impl.set.*;
 import org.muma.mini.redis.command.impl.string.*;
 import org.muma.mini.redis.command.impl.zset.*;
@@ -15,6 +18,8 @@ import org.muma.mini.redis.protocol.BulkString;
 import org.muma.mini.redis.protocol.ErrorMessage;
 import org.muma.mini.redis.protocol.RedisArray;
 import org.muma.mini.redis.protocol.RedisMessage;
+import org.muma.mini.redis.rdb.RdbManager;
+import org.muma.mini.redis.replication.ReplicationManager;
 import org.muma.mini.redis.server.RedisContext;
 import org.muma.mini.redis.store.StorageEngine;
 import org.slf4j.Logger;
@@ -35,16 +40,24 @@ public class CommandDispatcher {
     private final StorageEngine storage;
     private final AofManager aofManager; // 【新增】
 
-    public CommandDispatcher(StorageEngine storage, AofManager aofManager) {
+
+    private final ReplicationManager replicationManager;
+    private final RdbManager rdbManager;
+
+    public CommandDispatcher(StorageEngine storage, AofManager aofManager,
+                             ReplicationManager replManager, RdbManager rdbManager) {
         this.storage = storage;
         this.aofManager = aofManager;
-        this.initCommandRegistry();
+        this.replicationManager = replManager;
+        this.rdbManager = rdbManager;
+        initCommandRegistry();
     }
 
     /**
      * 初始化命令注册表，按数据结构分类注册
      */
     private void initCommandRegistry() {
+
         registerGenericCommands();
         registerStringCommands();
         registerHashCommands();
@@ -52,7 +65,7 @@ public class CommandDispatcher {
         registerListCommands();
         registerSetCommands();
         registerBloomCommands();
-
+        registerReplicationCommands();
 
         log.info("CommandDispatcher initialized. Total commands registered: {}", commandMap.size());
     }
@@ -134,6 +147,15 @@ public class CommandDispatcher {
         commandMap.put("BF.RESERVE", new BfReserveCommand());
         commandMap.put("BF.ADD", new BfAddCommand());
         commandMap.put("BF.EXISTS", new BfExistsCommand());
+    }
+
+    // 需要注入 ReplicationManager 和 RdbManager
+    // 构造函数可能需要调整
+
+    private void registerReplicationCommands() {
+        commandMap.put("SLAVEOF", new SlaveOfCommand(replicationManager));
+        commandMap.put("REPLCONF", new ReplConfCommand());
+        commandMap.put("PSYNC", new PsyncCommand(replicationManager, rdbManager));
     }
 
     private void registerStringCommands() {

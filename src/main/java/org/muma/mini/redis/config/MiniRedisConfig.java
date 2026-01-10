@@ -37,6 +37,14 @@ public class MiniRedisConfig {
     private String appendFilename = "appendonly.aof";
     private boolean aofUseRdbPreamble = false;
 
+    private String configFilePath = "redis.properties"; // 默认
+
+
+    // --- Replication ---
+    private String slaveOfHost = null;
+    private int slaveOfPort = -1;
+
+
     public static class SaveParam {
         public long seconds;
         public int changes;
@@ -68,7 +76,6 @@ public class MiniRedisConfig {
 
     // --- Singleton Access ---
     private MiniRedisConfig() {
-        loadConfig();
     }
 
     public static MiniRedisConfig getInstance() {
@@ -80,6 +87,10 @@ public class MiniRedisConfig {
     public void parseArgs(String[] args) {
         for (int i = 0; i < args.length; i++) {
             String arg = args[i];
+            // 【新增】支持自定义配置文件路径
+            if ("--config".equals(arg) && i + 1 < args.length) {
+                this.configFilePath = args[++i];
+            }
             if ("--port".equals(arg) && i + 1 < args.length) {
                 this.port = Integer.parseInt(args[++i]);
             } else if ("--backend".equals(arg) && i + 1 < args.length) {
@@ -89,8 +100,8 @@ public class MiniRedisConfig {
         log.info("Config loaded from args: port={}, backend={}", port, setDictBackend);
     }
 
-    private void loadConfig() {
-        Properties props = loadProperties();
+    public void loadConfig(String path) {
+        Properties props = loadProperties(path);
 
         // 1. Core
         this.port = getInt(props, "server.port", this.port);
@@ -116,26 +127,48 @@ public class MiniRedisConfig {
         if (!saveStr.isEmpty()) {
             String[] parts = saveStr.split("\\s+");
             for (int i = 0; i < parts.length; i += 2) {
-                saveParams.add(new SaveParam(
-                        Long.parseLong(parts[i]),
-                        Integer.parseInt(parts[i + 1])
-                ));
+                saveParams.add(new SaveParam(Long.parseLong(parts[i]), Integer.parseInt(parts[i + 1])));
+            }
+        }
+
+        // 解析 SlaveOf
+        // 格式: slaveof <host> <port> (中间用空格分隔)
+        String slaveof = getString(props, "slaveof", "");
+        if (!slaveof.isEmpty()) {
+            String[] parts = slaveof.split("\\s+");
+            if (parts.length == 2) {
+                this.slaveOfHost = parts[0];
+                try {
+                    this.slaveOfPort = Integer.parseInt(parts[1]);
+                } catch (NumberFormatException e) {
+                    log.warn("Invalid slaveof port: {}", parts[1]);
+                }
+            } else {
+                log.warn("Invalid slaveof config format: {}", slaveof);
             }
         }
 
         log.info("MiniRedisConfig initialized: {}", this); // 需要 toString()
     }
 
-    private Properties loadProperties() {
+    private Properties loadProperties(String path) {
         Properties props = new Properties();
-        try (InputStream is = getClass().getClassLoader().getResourceAsStream("redis.properties")) {
+        try (InputStream is = getClass().getClassLoader().getResourceAsStream(path)) {
+            // 如果是 classpath 资源
             if (is != null) {
                 props.load(is);
+                log.info("Loaded config from classpath: {}", path);
             } else {
-                log.warn("redis.properties not found in classpath, using defaults.");
+                // 尝试作为文件系统路径加载
+                try (InputStream fis = new java.io.FileInputStream(path)) {
+                    props.load(fis);
+                    log.info("Loaded config from file: {}", path);
+                } catch (IOException e) {
+                    log.warn("Config file not found: {}, using defaults.", path);
+                }
             }
         } catch (IOException e) {
-            log.error("Failed to load redis.properties", e);
+            log.error("Error loading config", e);
         }
         return props;
     }
