@@ -11,8 +11,11 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -60,9 +63,11 @@ public class AofManager {
         try {
             loadManifest();
 
+            File aofDir = config.getAofDirFile(); // 【修改】统一获取 AOF 目录
+
             // 恢复统计数据 (简单取 Base 大小作为初始基准)
             if (manifest.getBaseAof() != null) {
-                File baseFile = new File(config.getAppendDir(), manifest.getBaseAof().filename);
+                File baseFile = new File(aofDir, manifest.getBaseAof().filename);
                 if (baseFile.exists()) lastRewriteSize = baseFile.length();
             }
 
@@ -75,7 +80,7 @@ public class AofManager {
                 // 复用旧的 Incr (Crash 恢复场景)
                 diskWriter.open(lastIncr.filename);
                 // 恢复 currentAofSize (近似值)
-                File incrFile = new File(config.getAppendDir(), lastIncr.filename);
+                File incrFile = new File(aofDir, lastIncr.filename);
                 if (incrFile.exists()) currentAofSize = incrFile.length();
             }
 
@@ -135,9 +140,6 @@ public class AofManager {
             // 这样后台 Rewrite 只需关注内存快照，不用管增量同步
             startNewIncrFile();
 
-            // 记录下此时应该被废弃的文件 (即刚才切分前的 Incr(N) 和旧 Base)
-            // 但为了安全，我们不在这里删，等 Rewrite 成功后再删。
-
             // 异步提交任务
             rewriteExecutor.submit(this::performRewrite);
 
@@ -152,19 +154,23 @@ public class AofManager {
      * 规则：只保留 Manifest 中引用的 Base 和 Incr 文件，其他一律删除。
      */
     private void cleanup() {
-        File dir = new File(config.getAppendDir());
-        File[] files = dir.listFiles((d, name) -> name.startsWith(config.getAppendFilename()) && name.endsWith(".aof"));
-
-        if (files == null) return;
+        File dir = config.getAofDirFile(); // 【修改】使用 File 对象
+        if (!dir.exists()) return;
 
         // 收集有效文件名
-        java.util.Set<String> validFiles = new java.util.HashSet<>();
+        Set<String> validFiles = new HashSet<>();
         if (manifest.getBaseAof() != null) {
             validFiles.add(manifest.getBaseAof().filename);
         }
         for (AofManifest.AofInfo info : manifest.getIncrAofs()) {
             validFiles.add(info.filename);
         }
+        // 还要保留 manifest 文件本身
+        validFiles.add("appendonly.aof.manifest");
+
+        File[] files = dir.listFiles((d, name) -> name.startsWith(config.getAppendFilename()) || name.endsWith(".manifest"));
+
+        if (files == null) return;
 
         // 删除无效文件
         for (File f : files) {
@@ -183,10 +189,7 @@ public class AofManager {
         long newSeq = manifest.nextSeq();
         String filename = config.getAppendFilename() + "." + newSeq + ".incr.aof";
 
-        // 1. 关闭旧文件
-        // diskWriter 内部会 flush 并 close channel
-        // 但注意：diskWriter 是单例，我们只是让它 reopen
-        // open 方法内部会先 close 旧的
+        // 1. 关闭旧文件 (diskWriter 内部处理)
         diskWriter.open(filename);
 
         // 2. 更新 Manifest (内存)
@@ -200,67 +203,44 @@ public class AofManager {
     }
 
     /**
-     * 后台重写逻辑
-     */
-    /**
      * 执行 AOF 重写的核心逻辑 (运行在 rewriteExecutor 线程中)
-     * <p>
-     * 流程：
-     * 1. 准备新 Base 文件。
-     * 2. 执行快照：遍历内存生成指令，写入新 Base。
-     * 3. 原子切换：更新 Manifest，指向新 Base，废弃旧 Incr。
-     * 4. 垃圾回收：清理旧文件。
      */
     private void performRewrite() {
-        // 记录开始时间
         long start = System.currentTimeMillis();
         String baseName = null;
         File baseFile = null;
 
         try {
             // 1. 准备新 Base 文件
-            // 使用独立的 Sequence 生成文件名，避免与 Incr 冲突
             long newSeq = manifest.nextSeq();
             baseName = config.getAppendFilename() + "." + newSeq + ".base.aof";
-            baseFile = new File(config.getAppendDir(), baseName);
+
+            File aofDir = config.getAofDirFile(); // 【修改】
+            baseFile = new File(aofDir, baseName);
 
             log.info("Starting AOF rewrite to {}", baseName);
 
             // 2. 执行快照 (Snapshot & Write)
-            // 这一步最耗时，但不会阻塞主线程 (依赖 ConcurrentHashMap 的弱一致性迭代器)
             AofRewriter rewriter = new AofRewriter(storage);
             rewriter.rewrite(baseFile);
 
             // 3. 原子切换 (Atomic Switch)
-            // 必须加锁，防止与主线程的 append/triggerRewrite 冲突
             synchronized (this) {
                 // A. 更新 Base 指针
                 manifest.setBaseAof(baseName, newSeq);
 
                 // B. 裁剪 Incr 历史
-                // 此时 Manifest 里的 Incr 列表大概是 [Incr(Old), Incr(New)]
-                // Incr(Old) 的数据已经被重写进 Base 了，可以丢弃。
-                // Incr(New) 是重写期间产生的新数据，必须保留。
-                // pruneHistory() 会只保留列表中最后一个 Incr。
                 manifest.pruneHistory();
 
                 // C. 持久化 Manifest 到磁盘
-                // 这一步成功后，新的 Base 正式生效。
                 saveManifest();
 
                 // D. 更新统计状态
                 lastRewriteSize = baseFile.length();
                 lastRewriteTime = System.currentTimeMillis();
-
-                // 重置当前增量大小 (因为旧的 Incr 被归档进 Base 了，现在的 Incr 是新开的)
-                // 注意：这里 currentAofSize 应该重置为当前活跃 Incr 文件的大小
-                // 但由于我们在 triggerRewrite 时已经切换了新 Incr 并重置为 0，
-                // 且重写期间主线程一直在累加它，所以这里不需要清零，保持原样即可。
             }
 
             // 4. 垃圾回收 (Cleanup)
-            // 删除那些不再被 Manifest 引用的旧 Base 和旧 Incr
-            // 异步执行，不占用锁
             cleanup();
 
             long duration = System.currentTimeMillis() - start;
@@ -279,23 +259,13 @@ public class AofManager {
         }
     }
 
-
-    private void deleteOldFiles(List<AofManifest.AofInfo> files) {
-        for (AofManifest.AofInfo info : files) {
-            File f = new File(config.getAppendDir(), info.filename);
-            if (f.exists()) f.delete();
-        }
-        // 也要删旧的 Base (如果有) -> 这个逻辑需要 manifest 维护历史 base 列表或者每次 setBase 时记录旧的
-        // 简单实现：Manifest setBaseAof 时没返回旧的。
-        // 可以在 setBaseAof 前 manually check。
-    }
-
     // --- 基础辅助 ---
 
     private void loadManifest() throws IOException {
-        File dir = new File(config.getAppendDir());
+        File dir = config.getAofDirFile(); // 【修改】
         if (!dir.exists()) dir.mkdirs();
         File f = new File(dir, "appendonly.aof.manifest");
+
         if (f.exists()) {
             AofManifest loaded = AofManifest.decode(Files.readString(f.toPath()));
 
@@ -308,7 +278,7 @@ public class AofManager {
             }
 
             // 【修复点】使用新方法清空并添加
-            this.manifest.clearIncrAofs(); // 不再直接调 getIncrAofs().clear()
+            this.manifest.clearIncrAofs();
 
             for (AofManifest.AofInfo info : loaded.getIncrAofs()) {
                 this.manifest.addIncrAof(info.filename, info.seq);
@@ -317,14 +287,19 @@ public class AofManager {
     }
 
     private void saveManifest() throws IOException {
-        File dir = new File(config.getAppendDir());
+        File dir = config.getAofDirFile(); // 【修改】
         File temp = new File(dir, "temp.manifest");
         Files.writeString(temp.toPath(), manifest.encode());
         File dest = new File(dir, "appendonly.aof.manifest");
+
         // 原子 Rename
-        if (!temp.renameTo(dest)) {
-            // Windows 下可能失败如果 dest 存在，需先删后挪，或者用 Files.move ATOMIC_MOVE
-            Files.move(temp.toPath(), dest.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        try {
+            Files.move(temp.toPath(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            // Windows 可能的 fallback
+            if (!temp.renameTo(dest)) {
+                throw new IOException("Failed to rename manifest file");
+            }
         }
     }
 

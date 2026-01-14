@@ -2,6 +2,7 @@ package org.muma.mini.redis.replication;
 
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
+import org.muma.mini.redis.protocol.BulkString;
 import org.muma.mini.redis.protocol.ErrorMessage;
 import org.muma.mini.redis.protocol.RedisMessage;
 import org.muma.mini.redis.protocol.SimpleString;
@@ -24,6 +25,9 @@ public class RedisSlaveHandler extends SimpleChannelInboundHandler<RedisMessage>
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, RedisMessage msg) {
         ReplState state = manager.getState();
+
+        // 【新增调试日志】
+        log.info("Slave received msg in state {}: {}", state, msg.getClass().getSimpleName());
 
         // 错误处理
         if (msg instanceof ErrorMessage err) {
@@ -70,9 +74,14 @@ public class RedisSlaveHandler extends SimpleChannelInboundHandler<RedisMessage>
                 break;
 
             case TRANSFER:
-                // 正在接收 RDB 数据流
-                // 这里比较复杂，因为 Netty 的 RespDecoder 解析出的可能是 RDB 字节流片段
-                // 我们在 Level 3 再详细实现
+                // 等待 RDB (BulkString)
+                log.info("slave receive transfer message: {} {}", msg, msg.getClass().getSimpleName());
+                if (msg instanceof BulkString bs) {
+                    manager.handleRdbDump(bs.content());
+                } else {
+                    // 如果收到其他的 (比如 PING? 或者分包错误)，忽略或报错
+                    log.warn("Expected RDB (BulkString) in TRANSFER state, but got: {}", msg.getClass().getSimpleName());
+                }
                 break;
 
             case CONNECTED:
@@ -81,6 +90,15 @@ public class RedisSlaveHandler extends SimpleChannelInboundHandler<RedisMessage>
                 manager.handlePropagatedCommand(msg);
                 break;
         }
+    }
+
+
+    @Override
+    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+        log.warn("Connection to master lost.");
+        // 通知 Manager
+        manager.handleMasterDisconnection();
+        super.channelInactive(ctx);
     }
 
     private boolean isOk(RedisMessage msg) {

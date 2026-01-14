@@ -8,8 +8,6 @@ import org.muma.mini.redis.rdb.RdbManager; // 需要注入这个
 import org.muma.mini.redis.server.RedisContext;
 import org.muma.mini.redis.store.StorageEngine;
 
-import java.io.File;
-
 public class PsyncCommand implements RedisCommand {
 
     private final ReplicationManager replManager;
@@ -35,7 +33,7 @@ public class PsyncCommand implements RedisCommand {
 
         // 2. 触发 BGSAVE
         // 回调逻辑：当 RDB 生成后，发送给 Slave
-        rdbManager.triggerBgsave(file -> {
+        rdbManager.triggerBgSave(file -> {
             // 这是在 BGSAVE 线程回调的
             // 3. 发送 RDB 文件 (Level 3 实现)
             replManager.sendRdbToSlave(slaveCtx, file);

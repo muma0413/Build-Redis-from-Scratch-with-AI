@@ -18,12 +18,12 @@ import org.muma.mini.redis.server.RedisServerContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class MiniRedisServer {
+public class MiniRedisSlaveServer {
 
-    private static final Logger log = LoggerFactory.getLogger(MiniRedisServer.class);
+    private static final Logger log = LoggerFactory.getLogger(MiniRedisSlaveServer.class);
     private final int port;
 
-    public MiniRedisServer(int port) {
+    public MiniRedisSlaveServer(int port) {
         this.port = port;
     }
 
@@ -75,7 +75,7 @@ public class MiniRedisServer {
     public static void main(String[] args) throws InterruptedException {
         MiniRedisConfig config = MiniRedisConfig.getInstance();
 
-        // 1. 扫描命令行寻找配置文件路径 (默认 redis.properties)
+        // 1. 先简单扫描一遍 args 找 --config
         String configPath = "redis.properties";
         for (int i = 0; i < args.length; i++) {
             if ("--config".equals(args[i]) && i + 1 < args.length) {
@@ -84,11 +84,10 @@ public class MiniRedisServer {
             }
         }
 
-        // 2. 加载指定文件
+        // 2. 加载文件配置
         config.loadConfig(configPath);
 
-        // 3. 应用命令行覆盖 (如 --port)
         config.parseArgs(args);
-        new MiniRedisServer(config.getPort()).start();
+        new MiniRedisSlaveServer(config.getPort()).start();
     }
 }

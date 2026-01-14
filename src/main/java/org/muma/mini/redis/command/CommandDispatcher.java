@@ -14,6 +14,7 @@ import org.muma.mini.redis.command.impl.server.SlaveOfCommand;
 import org.muma.mini.redis.command.impl.set.*;
 import org.muma.mini.redis.command.impl.string.*;
 import org.muma.mini.redis.command.impl.zset.*;
+import org.muma.mini.redis.config.MiniRedisConfig;
 import org.muma.mini.redis.protocol.BulkString;
 import org.muma.mini.redis.protocol.ErrorMessage;
 import org.muma.mini.redis.protocol.RedisArray;
@@ -44,12 +45,19 @@ public class CommandDispatcher {
     private final ReplicationManager replicationManager;
     private final RdbManager rdbManager;
 
-    public CommandDispatcher(StorageEngine storage, AofManager aofManager,
-                             ReplicationManager replManager, RdbManager rdbManager) {
+    private final boolean appendOnlyEnabled; // 本地缓存，避免频繁调 config.isAppendOnly()
+
+    public CommandDispatcher(StorageEngine storage,
+                             AofManager aofManager,
+                             ReplicationManager replManager,
+                             RdbManager rdbManager,
+                             MiniRedisConfig config) {
         this.storage = storage;
         this.aofManager = aofManager;
         this.replicationManager = replManager;
         this.rdbManager = rdbManager;
+        // 【优化】缓存热点配置
+        this.appendOnlyEnabled = config.isAppendOnly();
         initCommandRegistry();
     }
 
@@ -245,7 +253,21 @@ public class CommandDispatcher {
             // 3. AOF 开启中 (Manager 内部会判断)
             // 4. 注意：这里 args 已经是 RedisArray，可以直接存
             if (command.isWrite() && !(response instanceof ErrorMessage)) {
-                aofManager.append(args);
+
+                try {
+                    // 1. AOF 追加
+                    if (appendOnlyEnabled) {
+                        aofManager.append(args);
+                    }
+
+                    // 2. 【核心修复】Replication 传播
+                    // 如果当前是 Master (配置了 slaveOf 或者有连接的 slaves)，就传播
+                    // ReplicationManager 内部会判断有没有 Slave，所以直接调没事
+                    replicationManager.propagate(args);
+                } catch (Exception e) {
+                    // 仅仅打印日志，绝不抛出，不影响给客户端返回 response
+                    log.error("Failed to process background tasks (AOF/Repl) for command: " + commandName, e);
+                }
             }
 
             return response;

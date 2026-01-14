@@ -1,26 +1,27 @@
 package org.muma.mini.redis.replication;
 
 import io.netty.bootstrap.Bootstrap;
-import io.netty.channel.Channel;
-import io.netty.channel.ChannelFutureListener;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelInitializer;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import lombok.Getter;
+import lombok.Setter;
+import org.muma.mini.redis.command.CommandDispatcher;
 import org.muma.mini.redis.config.MiniRedisConfig;
-import org.muma.mini.redis.protocol.BulkString;
-import org.muma.mini.redis.protocol.RedisArray;
-import org.muma.mini.redis.protocol.RedisMessage;
-import org.muma.mini.redis.protocol.RespDecoder;
-import org.muma.mini.redis.protocol.RespEncoder;
+import org.muma.mini.redis.protocol.*;
+import org.muma.mini.redis.rdb.RdbLoader;
 import org.muma.mini.redis.server.RedisCoreExecutor;
 import org.muma.mini.redis.store.StorageEngine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -52,6 +53,9 @@ public class ReplicationManager {
     // --- Master 角色字段 ---
     // 1. 在线 Slave 列表 (已完成同步，直接转发命令)
     private final List<ChannelHandlerContext> onlineSlaves = new CopyOnWriteArrayList<>();
+
+    @Setter
+    private CommandDispatcher dispatcher;
 
     // 2. 正在全量同步中的 Slave (Pending)
     // Key: Slave Connection
@@ -86,6 +90,12 @@ public class ReplicationManager {
      * 当主线程执行完写命令后调用
      */
     public void propagate(RedisArray command) {
+
+        // 【防死循环】如果自己是 Slave (处于 CONNECT/CONNECTED 等状态)，绝对不传播！
+        // 只有 Master (State == NONE) 才传播。
+        if (state != ReplState.NONE) {
+            return;
+        }
         // 1. 发送给 Online Slaves
         for (ChannelHandlerContext slave : onlineSlaves) {
             if (slave.channel().isActive()) {
@@ -177,20 +187,23 @@ public class ReplicationManager {
     // --- State Actions ---
     public void sendPing() {
         state = ReplState.RECEIVE_PONG;
-        writeToMaster(new RedisArray(new RedisMessage[]{ new BulkString("PING") }));
+        writeToMaster(new RedisArray(new RedisMessage[]{new BulkString("PING")}));
     }
+
     public void sendReplConfPort() {
         state = ReplState.SEND_PORT;
         writeToMaster(new RedisArray(new RedisMessage[]{
                 new BulkString("REPLCONF"), new BulkString("listening-port"), new BulkString(String.valueOf(config.getPort()))
         }));
     }
+
     public void sendReplConfCapa() {
         state = ReplState.SEND_CAPA;
         writeToMaster(new RedisArray(new RedisMessage[]{
                 new BulkString("REPLCONF"), new BulkString("capa"), new BulkString("psync2")
         }));
     }
+
     public void sendPsync() {
         state = ReplState.RECEIVE_PSYNC;
         writeToMaster(new RedisArray(new RedisMessage[]{
@@ -217,6 +230,27 @@ public class ReplicationManager {
         // 注意：这里需要拿到 CommandDispatcher 实例
         // 最好通过构造函数注入，或者在 ServerContext 里协调
         // 暂时假设我们能拿到 dispatch (需要在构造函数加参数)
+        log.info("handlePropagatedCommand {}", msg.toString());
+
+        if (msg instanceof RedisArray command) {
+            try {
+                // 收到命令，直接执行
+                // 这里的 ctx 传 null？还是传 masterChannel？
+                // 既然是 Master 发来的，不需要回复（Slave 对 Master 是只读的）。
+                // 所以传 null 是安全的，或者传一个 Dummy Context。
+
+                // 注意：这里需要 CommandDispatcher。
+                // 我们在 ReplicationManager 里没有 Dispatcher 的引用。
+                // 方案：在 ServerContext 里注入？或者通过构造函数传进来？
+                // 之前的构造函数只有 storage, config, executor。
+                // 建议：构造函数增加 CommandDispatcher 参数。
+
+                dispatcher.dispatch(command, null);
+
+            } catch (Exception e) {
+                log.error("Failed to execute propagated command", e);
+            }
+        }
     }
 
     private void writeToMaster(RedisMessage msg) {
@@ -225,9 +259,101 @@ public class ReplicationManager {
         }
     }
 
-    public void sendRdbToSlave(ChannelHandlerContext slave, File rdbFile) {
-        // TODO: Level 3 实现零拷贝发送
+    public void sendRdbToSlave(ChannelHandlerContext slaveCtx, File rdbFile) {
         log.info("RDB generated, ready to send to slave: {}", rdbFile.getName());
+
+        if (!slaveCtx.channel().isActive()) {
+            pendingSlaves.remove(slaveCtx);
+            return;
+        }
+
+        long length = rdbFile.length();
+        log.info("Sending RDB to slave: {} ({} bytes)", slaveCtx.channel().remoteAddress(), length);
+
+        try {
+            // 【修改】不使用 FileRegion，直接读入内存发送
+            // 避免 FileRegion 在某些环境下 (如 Docker/Windows) 的坑
+            // 且对于小文件，这样更稳
+            byte[] bytes = Files.readAllBytes(rdbFile.toPath());
+
+            // 构造 ByteBuf: Header + Body + 【CRLF】
+            ByteBuf composite = Unpooled.buffer((int)length + 22);
+
+            String header = "$" + length + "\r\n";
+            composite.writeBytes(header.getBytes(StandardCharsets.UTF_8));
+
+            composite.writeBytes(bytes);
+
+            // 【关键 Fix】补上 \r\n，让 RespDecoder 以为这是一个普通的 BulkString
+            composite.writeBytes(new byte[]{'\r', '\n'});
+
+            // 发送
+            slaveCtx.writeAndFlush(composite).addListener((ChannelFutureListener) future -> {
+                if (future.isSuccess()) {
+                    log.info("RDB sent to slave successfully.");
+                    promoteSlaveToOnline(slaveCtx);
+                } else {
+                    log.error("Failed to send RDB to slave", future.cause());
+                    pendingSlaves.remove(slaveCtx);
+                    slaveCtx.close();
+                }
+            });
+
+        } catch (IOException e) {
+            log.error("Failed to read RDB file", e);
+            pendingSlaves.remove(slaveCtx);
+            slaveCtx.close();
+        }
+    }
+
+    public void handleMasterDisconnection() {
+        // 如果我们本来就是 Slave 状态 (CONNECT/CONNECTED...)
+        if (state != ReplState.NONE) {
+            log.info("Reconnecting to master in 1s...");
+            state = ReplState.CONNECT; // 重置状态
+            masterChannel = null;
+
+            // 延时重连
+            // 注意：这里需要 coreExecutor 支持 schedule，或者用 Thread.sleep
+            // 简单起见，开个线程或者用 scheduler (如果有)
+            new Thread(() -> {
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                }
+                coreExecutor.submit(this::connectToMaster);
+            }).start();
+        }
+    }
+
+    public void handleRdbDump(byte[] rdbData) {
+        log.info("Received RDB dump, size: {} bytes", rdbData.length);
+
+        // 【修改】使用配置的工作目录，而不是 AOF 目录
+        // 这样可以确保它生成在 ./target/slave-data/temp-replication.rdb
+        File dumpFile = new File(config.getWorkingDir(), "temp-replication.rdb");
+
+        // 确保目录存在
+        if (!dumpFile.getParentFile().exists()) {
+            dumpFile.getParentFile().mkdirs();
+        }
+
+        try {
+            Files.write(dumpFile.toPath(), rdbData); // 简单写入
+
+            // 2. 清空当前数据库
+            storage.flush();
+
+            // 3. 加载 RDB
+            new RdbLoader(storage).load(dumpFile);
+
+            log.info("RDB loaded successfully. Replication synced.");
+            state = ReplState.CONNECTED;
+
+        } catch (IOException e) {
+            log.error("Failed to save/load RDB dump", e);
+            if (masterChannel != null) masterChannel.close();
+        }
     }
 
 }
