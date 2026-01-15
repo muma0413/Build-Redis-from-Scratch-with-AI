@@ -19,6 +19,7 @@ public class GetBitCommand implements RedisCommand {
         String key = ((BulkString) args.elements()[1]).asString();
         long offset;
         try {
+            assert ((BulkString) args.elements()[2]).asString() != null;
             offset = Long.parseLong(((BulkString) args.elements()[2]).asString());
             if (offset < 0) return new ErrorMessage("ERR bit offset is not an integer or out of range");
         } catch (NumberFormatException e) {

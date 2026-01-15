@@ -74,7 +74,7 @@ public class RdbManager {
         saver.bgsave(file, () -> {
             // 核心逻辑：重置 dirty
             storage.resetDirty();
-            log.info("RDB bgsave finished: {}", file.getName());
+//            log.info("RDB bgsave finished: {}", file.getName());
 
             // 执行额外回调
             if (callback != null) {

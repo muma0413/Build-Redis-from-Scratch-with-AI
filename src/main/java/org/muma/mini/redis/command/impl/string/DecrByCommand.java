@@ -20,13 +20,14 @@ public class DecrByCommand implements RedisCommand {
         String key = ((BulkString) args.elements()[1]).asString();
         long decrement;
         try {
+            assert ((BulkString) args.elements()[2]).asString() != null;
             decrement = Long.parseLong(((BulkString) args.elements()[2]).asString());
         } catch (NumberFormatException e) {
             return errorInt();
         }
 
         RedisData<?> data = storage.get(key);
-        long val = 0;
+        long val = 0L;
 
         if (data != null) {
             if (data.getType() != RedisDataType.STRING) {

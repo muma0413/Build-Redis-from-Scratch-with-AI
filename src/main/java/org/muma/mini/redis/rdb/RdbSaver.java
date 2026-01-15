@@ -85,7 +85,7 @@ public class RdbSaver {
         }
 
         long duration = System.currentTimeMillis() - start;
-        log.info("DB saved on disk. Size: {}, Duration: {} ms", file.length(), duration);
+//        log.info("DB saved on disk. Size: {}, Duration: {} ms", file.length(), duration);
     }
 
     /**
