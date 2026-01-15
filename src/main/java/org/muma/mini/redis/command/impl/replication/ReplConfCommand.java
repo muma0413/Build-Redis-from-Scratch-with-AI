@@ -12,8 +12,17 @@ import org.muma.mini.redis.store.StorageEngine;
 public class ReplConfCommand implements RedisCommand {
     @Override
     public RedisMessage execute(StorageEngine storage, RedisArray args, RedisContext context) {
-        // 简单实现：无论 Slave 发什么配置，Master 都说 OK
-        // 未来可以在这里记录 Slave 的 listening-port 或处理 ACK 偏移量
+        RedisMessage[] elements = args.elements();
+        if (elements.length > 1) {
+            String subCmd = ((BulkString) elements[1]).asString();
+            if ("ACK".equalsIgnoreCase(subCmd)) {
+                // 处理 ACK
+                // 可以在这里调用 manager.handleAck(ctx, offset)
+                // 但 ReplConfCommand 没持有 manager 引用。
+                // 鉴于目前 ACK 只是保活，不影响逻辑，我们可以简单忽略或打印日志。
+                return null; // ACK 不需要回复
+            }
+        }
         return new SimpleString("OK");
     }
 }

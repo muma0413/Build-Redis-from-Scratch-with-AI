@@ -28,6 +28,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 复制管理器 (Replication Manager)
@@ -62,6 +64,13 @@ public class ReplicationManager {
     // Value: 缓冲区 (在该 Slave 等待 RDB 期间产生的新命令)
     private final Map<ChannelHandlerContext, List<RedisArray>> pendingSlaves = new ConcurrentHashMap<>();
 
+
+    // 【新增】Slave 定时发 ACK 任务
+    private ScheduledFuture<?> ackTask;
+
+    // 【新增】Master 定时发 PING 任务
+    private ScheduledFuture<?> pingTask;
+
     public ReplicationManager(MiniRedisConfig config, StorageEngine storage, RedisCoreExecutor coreExecutor) {
         this.config = config;
         this.storage = storage;
@@ -83,6 +92,9 @@ public class ReplicationManager {
         // 这里 value 是 ArrayList，但在 put 时是原子的
         pendingSlaves.put(ctx, Collections.synchronizedList(new ArrayList<>()));
         log.info("New slave added to pending list: {}", ctx.channel().remoteAddress());
+
+        // 【新增】确保 Master 心跳任务启动
+        startMasterPingTask(ctx.channel().eventLoop());
     }
 
     /**
@@ -146,6 +158,9 @@ public class ReplicationManager {
             metadata.clearMaster();
             state = ReplState.NONE;
             if (masterChannel != null) masterChannel.close();
+
+            // 【新增】停止心跳
+            stopSlaveAckTask();
             log.info("Turned into a MASTER");
             return;
         }
@@ -222,7 +237,8 @@ public class ReplicationManager {
 
     public void handleContinue() {
         log.info("Partial sync accepted.");
-        state = ReplState.CONNECTED;
+        // 【新增】
+        transitionToConnected();
     }
 
     public void handlePropagatedCommand(RedisMessage msg) {
@@ -277,7 +293,7 @@ public class ReplicationManager {
             byte[] bytes = Files.readAllBytes(rdbFile.toPath());
 
             // 构造 ByteBuf: Header + Body + 【CRLF】
-            ByteBuf composite = Unpooled.buffer((int)length + 22);
+            ByteBuf composite = Unpooled.buffer((int) length + 22);
 
             String header = "$" + length + "\r\n";
             composite.writeBytes(header.getBytes(StandardCharsets.UTF_8));
@@ -305,6 +321,60 @@ public class ReplicationManager {
             slaveCtx.close();
         }
     }
+
+    // --- Master 心跳逻辑 ---
+    private void startMasterPingTask(EventLoop loop) {
+        if (pingTask == null) {
+            // 每 10s 发送一次 PING
+            pingTask = loop.scheduleAtFixedRate(this::sendPingToSlaves, 10, 10, TimeUnit.SECONDS);
+        }
+    }
+
+    private void sendPingToSlaves() {
+        if (onlineSlaves.isEmpty()) return;
+
+        log.info("Master sending PING to {} slaves...", onlineSlaves.size());
+        RedisArray ping = new RedisArray(new RedisMessage[]{new BulkString("PING")});
+        for (ChannelHandlerContext slave : onlineSlaves) {
+            if (slave.channel().isActive()) {
+                slave.writeAndFlush(ping);
+            }
+        }
+    }
+
+    // --- Slave 状态切换与 ACK ---
+    private void transitionToConnected() {
+        state = ReplState.CONNECTED;
+        startSlaveAckTask();
+    }
+
+    private void startSlaveAckTask() {
+        if (masterChannel != null && masterChannel.eventLoop() != null) {
+            ackTask = masterChannel.eventLoop().scheduleAtFixedRate(this::sendAck, 1, 1, TimeUnit.SECONDS);
+        }
+    }
+
+    private void stopSlaveAckTask() {
+        if (ackTask != null) {
+            ackTask.cancel(false);
+            ackTask = null;
+        }
+    }
+
+    private void sendAck() {
+        if (state != ReplState.CONNECTED) return;
+
+        long offset = metadata.getReplOffset();
+        // 【新增日志】
+        log.info("Slave sending ACK, offset: {}", offset);
+
+        writeToMaster(new RedisArray(new RedisMessage[]{
+                new BulkString("REPLCONF"),
+                new BulkString("ACK"),
+                new BulkString(String.valueOf(offset))
+        }));
+    }
+
 
     public void handleMasterDisconnection() {
         // 如果我们本来就是 Slave 状态 (CONNECT/CONNECTED...)
@@ -348,7 +418,8 @@ public class ReplicationManager {
             new RdbLoader(storage).load(dumpFile);
 
             log.info("RDB loaded successfully. Replication synced.");
-            state = ReplState.CONNECTED;
+            // 【新增】转为连接状态并启动心跳
+            transitionToConnected();
 
         } catch (IOException e) {
             log.error("Failed to save/load RDB dump", e);
