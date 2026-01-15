@@ -101,6 +101,9 @@ public class MiniRedisConfig {
 
     private String slaveOfHost = null; // Master IP
     private int slaveOfPort = -1;      // Master Port
+    // 重连间隔 (毫秒)
+    @Getter
+    private int replRetryInterval = 1000;
 
     // ==========================================
     // 初始化逻辑
@@ -178,6 +181,14 @@ public class MiniRedisConfig {
                     }
                 }
             }
+        }
+
+        // 解析 retry interval
+        String interval = getString(props, "repl-retry-interval", "1000");
+        try {
+            this.replRetryInterval = Integer.parseInt(interval);
+        } catch (NumberFormatException e) {
+            log.warn("Invalid repl-retry-interval value '{}', using default 1000.", interval);
         }
 
         log.info("MiniRedisConfig initialized: {}", this);

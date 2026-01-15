@@ -10,9 +10,11 @@ import org.muma.mini.redis.command.impl.key.*;
 import org.muma.mini.redis.command.impl.list.*;
 import org.muma.mini.redis.command.impl.replication.PsyncCommand;
 import org.muma.mini.redis.command.impl.replication.ReplConfCommand;
+import org.muma.mini.redis.command.impl.server.PingCommand;
 import org.muma.mini.redis.command.impl.server.SlaveOfCommand;
 import org.muma.mini.redis.command.impl.set.*;
 import org.muma.mini.redis.command.impl.string.*;
+import org.muma.mini.redis.command.impl.replication.DebugBreakCommand;
 import org.muma.mini.redis.command.impl.zset.*;
 import org.muma.mini.redis.config.MiniRedisConfig;
 import org.muma.mini.redis.protocol.BulkString;
@@ -164,6 +166,8 @@ public class CommandDispatcher {
         commandMap.put("SLAVEOF", new SlaveOfCommand(replicationManager));
         commandMap.put("REPLCONF", new ReplConfCommand());
         commandMap.put("PSYNC", new PsyncCommand(replicationManager, rdbManager));
+        commandMap.put("DEBUG", new DebugBreakCommand(replicationManager));
+        commandMap.put("PING", new PingCommand());
     }
 
     private void registerStringCommands() {

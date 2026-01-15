@@ -27,7 +27,7 @@ public class RedisSlaveHandler extends SimpleChannelInboundHandler<RedisMessage>
         ReplState state = manager.getState();
 
         // 【新增调试日志】
-        log.info("Slave received msg in state {}: {}", state, msg.getClass().getSimpleName());
+//        log.info("Slave received msg in state {}: {}", state, msg.getClass().getSimpleName());
 
         // 错误处理
         if (msg instanceof ErrorMessage err) {
