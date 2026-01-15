@@ -71,6 +71,9 @@ public class ReplicationManager {
     // 【新增】Master 定时发 PING 任务
     private ScheduledFuture<?> pingTask;
 
+    @Getter
+    private final ReplicationBacklog backlog = new ReplicationBacklog();
+
     public ReplicationManager(MiniRedisConfig config, StorageEngine storage, RedisCoreExecutor coreExecutor) {
         this.config = config;
         this.storage = storage;
@@ -99,35 +102,67 @@ public class ReplicationManager {
 
     /**
      * 命令传播 (Propagate)
-     * 当主线程执行完写命令后调用
+     * 当主线程执行完写命令后调用。
+     *
+     * 【级联复制支持】
+     * 即使当前节点是 Slave (state != NONE)，只要它有下游 Slave (online 或 pending)，
+     * 它也需要充当中间层 Master，继续向下游传播命令。
      */
     public void propagate(RedisArray command) {
+        // 1. 检查是否有下游 Slave 需要照顾
+        // 如果没有下游，且自己也不是 Master (只是纯 Slave)，则直接返回
+        // 注意：如果是 Master (state == NONE)，即使当前没 Slave，也建议写 Backlog (为了支持未来的 PSYNC)
+        // 但为了节省内存，如果完全没有 Slave 连过，也可以不写。
+        // 这里采用 Redis 策略：Master 始终写 Backlog；Slave 只有当有 Sub-Slave 时才写。
 
-        // 【防死循环】如果自己是 Slave (处于 CONNECT/CONNECTED 等状态)，绝对不传播！
-        // 只有 Master (State == NONE) 才传播。
-        if (state != ReplState.NONE) {
-            return;
+        boolean isMaster = (state == ReplState.NONE);
+        boolean hasDownstreams = !onlineSlaves.isEmpty() || !pendingSlaves.isEmpty();
+
+        if (!isMaster && !hasDownstreams) {
+            return; // 纯叶子节点 Slave，无需传播
         }
-        // 1. 发送给 Online Slaves
-        for (ChannelHandlerContext slave : onlineSlaves) {
-            if (slave.channel().isActive()) {
-                slave.writeAndFlush(command);
-            } else {
-                onlineSlaves.remove(slave); // 懒惰清理
+
+        // 2. 写入 Backlog (增量同步的基础)
+        // Master 必须写；中间层 Slave 为了支持下游 PSYNC 也必须写
+        backlog.write(command);
+
+        // 更新全局 Offset (用于 INFO replication 展示和 PSYNC 校验)
+        metadata.setReplOffset(backlog.getMasterReplOffset());
+
+        // 3. 发送给 Online Slaves (实时传播)
+        if (!onlineSlaves.isEmpty()) {
+            for (ChannelHandlerContext slave : onlineSlaves) {
+                if (slave.channel().isActive()) {
+                    slave.writeAndFlush(command);
+                } else {
+                    onlineSlaves.remove(slave); // 懒惰清理断开的连接
+                }
             }
         }
 
-        // 2. 缓冲给 Pending Slaves
-        // 这里的遍历开销在 Slave 很多时可能较大，Redis 优化是用全局 Backlog
-        // Mini-Redis 简化：直接给每个 Pending Slave 存一份
+        // 4. 缓冲给 Pending Slaves (全量同步期间的增量)
         if (!pendingSlaves.isEmpty()) {
             for (Map.Entry<ChannelHandlerContext, List<RedisArray>> entry : pendingSlaves.entrySet()) {
                 entry.getValue().add(command);
             }
         }
-
-        // 3. 更新全局 Offset (暂略，Phase 6)
     }
+
+
+    public void addSlaveToOnline(ChannelHandlerContext ctx) {
+        onlineSlaves.add(ctx);
+        log.info("Slave promoted to Online directly (Partial Sync).");
+    }
+
+    // 模拟断网，保留状态以便 PSYNC
+    public void debugSimulateDisconnect() {
+        if (masterChannel != null) {
+            log.warn(">>> DEBUG: Simulating connection break...");
+            masterChannel.close();
+            // 触发 channelInactive -> handleMasterDisconnection -> 自动重连
+        }
+    }
+
 
     /**
      * RDB 发送完成后的回调 (Level 3 预留)
@@ -221,8 +256,17 @@ public class ReplicationManager {
 
     public void sendPsync() {
         state = ReplState.RECEIVE_PSYNC;
+        String runId = metadata.getCachedMasterRunId();
+        long offset = metadata.getReplOffset();
+
+        // 如果是第一次，runId 是 "?"，offset 是 -1
+        // 如果是重连，runId 是 Master 的 ID，offset 是上次同步的位置
+        log.info(">>> Sending PSYNC: {} {}", runId, offset);
+
         writeToMaster(new RedisArray(new RedisMessage[]{
-                new BulkString("PSYNC"), new BulkString("?"), new BulkString("-1")
+                new BulkString("PSYNC"),
+                new BulkString(runId),
+                new BulkString(String.valueOf(offset))
         }));
     }
 
@@ -246,8 +290,6 @@ public class ReplicationManager {
         // 注意：这里需要拿到 CommandDispatcher 实例
         // 最好通过构造函数注入，或者在 ServerContext 里协调
         // 暂时假设我们能拿到 dispatch (需要在构造函数加参数)
-        log.info("handlePropagatedCommand {}", msg.toString());
-
         if (msg instanceof RedisArray command) {
             try {
                 // 收到命令，直接执行
@@ -275,6 +317,9 @@ public class ReplicationManager {
         }
     }
 
+    /**
+     * 发送 RDB 文件给 Slave (流式传输，零拷贝，无 OOM 风险)
+     */
     public void sendRdbToSlave(ChannelHandlerContext slaveCtx, File rdbFile) {
         log.info("RDB generated, ready to send to slave: {}", rdbFile.getName());
 
@@ -287,26 +332,30 @@ public class ReplicationManager {
         log.info("Sending RDB to slave: {} ({} bytes)", slaveCtx.channel().remoteAddress(), length);
 
         try {
-            // 【修改】不使用 FileRegion，直接读入内存发送
-            // 避免 FileRegion 在某些环境下 (如 Docker/Windows) 的坑
-            // 且对于小文件，这样更稳
-            byte[] bytes = Files.readAllBytes(rdbFile.toPath());
+            // 1. 发送头部: $ <len>\r\n
+            // 这部分很小，直接写内存 Buffer
+            String headerStr = "$" + length + "\r\n";
+            ByteBuf header = Unpooled.wrappedBuffer(headerStr.getBytes(StandardCharsets.UTF_8));
+            slaveCtx.write(header);
 
-            // 构造 ByteBuf: Header + Body + 【CRLF】
-            ByteBuf composite = Unpooled.buffer((int) length + 22);
+            // 2. 发送文件内容 (ChunkedFile)
+            // 使用 Netty 的 ChunkedFile 实现流式传输。
+            // 它会把大文件切分成 8KB (8192) 的小块，一块块写入 Socket。
+            // 优点：不占用堆内存，支持零拷贝 (如果 OS 支持)，不阻塞 Loop。
+            io.netty.handler.stream.ChunkedFile chunkedFile =
+                    new io.netty.handler.stream.ChunkedFile(rdbFile, 8192);
+            slaveCtx.write(chunkedFile);
 
-            String header = "$" + length + "\r\n";
-            composite.writeBytes(header.getBytes(StandardCharsets.UTF_8));
+            // 3. 发送尾部 (CRLF)
+            // 为了兼容 Slave 端的 RespDecoder (它可能期待 BulkString 以 \r\n 结尾)
+            slaveCtx.write(Unpooled.wrappedBuffer(new byte[]{'\r', '\n'}));
 
-            composite.writeBytes(bytes);
-
-            // 【关键 Fix】补上 \r\n，让 RespDecoder 以为这是一个普通的 BulkString
-            composite.writeBytes(new byte[]{'\r', '\n'});
-
-            // 发送
-            slaveCtx.writeAndFlush(composite).addListener((ChannelFutureListener) future -> {
+            // 4. 刷新并添加回调
+            // 这里的 Future 会在上述所有数据（包括那个巨大的 ChunkedFile）都发送完毕后才触发
+            slaveCtx.writeAndFlush(Unpooled.EMPTY_BUFFER).addListener((ChannelFutureListener) future -> {
                 if (future.isSuccess()) {
                     log.info("RDB sent to slave successfully.");
+                    // 发送完毕，晋升为 Online，开始发送积压命令
                     promoteSlaveToOnline(slaveCtx);
                 } else {
                     log.error("Failed to send RDB to slave", future.cause());
@@ -316,11 +365,12 @@ public class ReplicationManager {
             });
 
         } catch (IOException e) {
-            log.error("Failed to read RDB file", e);
+            log.error("Failed to open RDB file for sending", e);
             pendingSlaves.remove(slaveCtx);
             slaveCtx.close();
         }
     }
+
 
     // --- Master 心跳逻辑 ---
     private void startMasterPingTask(EventLoop loop) {
@@ -333,7 +383,7 @@ public class ReplicationManager {
     private void sendPingToSlaves() {
         if (onlineSlaves.isEmpty()) return;
 
-        log.info("Master sending PING to {} slaves...", onlineSlaves.size());
+//        log.info("Master sending PING to {} slaves...", onlineSlaves.size());
         RedisArray ping = new RedisArray(new RedisMessage[]{new BulkString("PING")});
         for (ChannelHandlerContext slave : onlineSlaves) {
             if (slave.channel().isActive()) {
@@ -366,7 +416,8 @@ public class ReplicationManager {
 
         long offset = metadata.getReplOffset();
         // 【新增日志】
-        log.info("Slave sending ACK, offset: {}", offset);
+        if(offset != 0L)
+            log.info("Slave sending ACK, offset: {}", offset);
 
         writeToMaster(new RedisArray(new RedisMessage[]{
                 new BulkString("REPLCONF"),
@@ -379,7 +430,10 @@ public class ReplicationManager {
     public void handleMasterDisconnection() {
         // 如果我们本来就是 Slave 状态 (CONNECT/CONNECTED...)
         if (state != ReplState.NONE) {
-            log.info("Reconnecting to master in 1s...");
+            // 获取配置的重连时间
+            int retryMs = config.getReplRetryInterval();
+            log.info("Reconnecting to master in {} ms...", retryMs);
+
             state = ReplState.CONNECT; // 重置状态
             masterChannel = null;
 
@@ -388,7 +442,7 @@ public class ReplicationManager {
             // 简单起见，开个线程或者用 scheduler (如果有)
             new Thread(() -> {
                 try {
-                    Thread.sleep(1000);
+                    Thread.sleep(retryMs);
                 } catch (InterruptedException e) {
                 }
                 coreExecutor.submit(this::connectToMaster);

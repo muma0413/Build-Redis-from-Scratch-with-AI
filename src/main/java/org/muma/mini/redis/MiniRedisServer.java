@@ -10,6 +10,7 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
+import io.netty.handler.stream.ChunkedWriteHandler;
 import org.muma.mini.redis.config.MiniRedisConfig;
 import org.muma.mini.redis.protocol.RespDecoder;
 import org.muma.mini.redis.protocol.RespEncoder;
@@ -50,6 +51,7 @@ public class MiniRedisServer {
                             ch.pipeline()
                                     .addLast(new RespDecoder())
                                     .addLast(new RespEncoder())
+                                    .addLast(new ChunkedWriteHandler()) // 【新增】支持大文件流式发送
                                     // 这里的 handler 依然是每连接 new 一个，但传入单例组件
                                     .addLast(new RedisCommandHandler(
                                             serverContext.getDispatcher(),
