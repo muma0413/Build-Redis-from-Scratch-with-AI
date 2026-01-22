@@ -38,10 +38,15 @@ public class RPushXCommand implements RedisCommand {
 
         storage.put(key, data);
 
-        // 【新增】触发唤醒
+        // 【Fix】先记录长度，再触发唤醒
+        // 因为 onPush 可能会把数据弹走，导致 list.size() 变小
+        long currentSize = list.size();
+
+        // 4. 触发阻塞唤醒
         storage.getBlockingManager().onPush(key, storage);
 
-        return new RedisInteger(list.size());
+        // 5. 返回推入后的长度 (快照)
+        return new RedisInteger(currentSize);
     }
 
     @Override

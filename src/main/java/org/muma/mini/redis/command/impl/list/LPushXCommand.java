@@ -40,11 +40,15 @@ public class LPushXCommand implements RedisCommand {
 
         storage.put(key, data);
 
-        // 【新增】只有当确实执行了 push 时才触发
-        // 因为 LPUSHX 只有 key 存在才推，如果 key 不存在 data==null 我们前面直接返回 0 了
-        // 所以能走到这里，说明肯定推入了数据。
+        // 【Fix】先记录长度，再触发唤醒
+        // 因为 onPush 可能会把数据弹走，导致 list.size() 变小
+        long currentSize = list.size();
+
+        // 4. 触发阻塞唤醒
         storage.getBlockingManager().onPush(key, storage);
-        return new RedisInteger(list.size());
+
+        // 5. 返回推入后的长度 (快照)
+        return new RedisInteger(currentSize);
     }
 
     @Override

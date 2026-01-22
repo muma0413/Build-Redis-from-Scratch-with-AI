@@ -7,41 +7,43 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * 基于 ArrayList 模拟的 ZipList ZSet 存储引擎
+ * <p>
+ * 适用场景：元素数量少且 Member 短小。
+ * 优势：内存极度紧凑。
+ * 劣势：插入删除 O(N)。
+ */
 public class ZipListZSetProvider implements ZSetProvider {
 
-    // 模拟 ZipList: member, score, member, score... 且保持有序
+    // member, score, member, score...
     private final List<Object> list = new ArrayList<>();
 
     @Override
     public int add(double score, String member) {
-        // 1. 检查是否存在
         int existingIndex = findMemberIndex(member);
         if (existingIndex != -1) {
             double oldScore = (double) list.get(existingIndex + 1);
             if (oldScore == score) {
-                return 0; // 分数没变，无需操作
+                return 0;
             }
-            // 分数变了：先删除旧的，再重新寻找位置插入新的
-            list.remove(existingIndex + 1); // remove score
-            list.remove(existingIndex);     // remove member
+            list.remove(existingIndex + 1);
+            list.remove(existingIndex);
         }
 
-        // 2. 寻找插入位置 (保持 Score 升序，Score 相同按 Member 字典序)
+        // 插入排序 (O(N))
         int insertIndex = 0;
         while (insertIndex < list.size()) {
             String curMember = (String) list.get(insertIndex);
             double curScore = (double) list.get(insertIndex + 1);
-
             if (score < curScore || (score == curScore && member.compareTo(curMember) < 0)) {
                 break;
             }
             insertIndex += 2;
         }
 
-        // 3. 插入
         list.add(insertIndex, member);
         list.add(insertIndex + 1, score);
-
         return existingIndex != -1 ? 0 : 1;
     }
 
@@ -49,8 +51,8 @@ public class ZipListZSetProvider implements ZSetProvider {
     public int remove(String member) {
         int idx = findMemberIndex(member);
         if (idx != -1) {
-            list.remove(idx + 1); // remove score
-            list.remove(idx);     // remove member
+            list.remove(idx + 1);
+            list.remove(idx);
             return 1;
         }
         return 0;
@@ -66,7 +68,6 @@ public class ZipListZSetProvider implements ZSetProvider {
     public Long getRank(String member) {
         int idx = findMemberIndex(member);
         if (idx == -1) return null;
-        // ZipList 索引是 0, 2, 4... 对应的 Rank 是 0, 1, 2...
         return (long) (idx / 2);
     }
 
@@ -74,11 +75,11 @@ public class ZipListZSetProvider implements ZSetProvider {
     public List<RedisZSet.ZSetEntry> range(long start, long stop) {
         int size = size();
 
-        // 处理负数索引
+        // 1. 负数归一化
         if (start < 0) start = size + start;
         if (stop < 0) stop = size + stop;
 
-        // 边界修正
+        // 2. 边界修正
         if (start < 0) start = 0;
         if (start > stop || start >= size) return new ArrayList<>();
         if (stop >= size) stop = size - 1;
@@ -100,32 +101,36 @@ public class ZipListZSetProvider implements ZSetProvider {
 
     @Override
     public List<RedisZSet.ZSetEntry> getAll() {
-        // getAll 本质上就是获取全量 Range
         return range(0, size() - 1);
     }
 
-    // --- 内部辅助方法 ---
-    private int findMemberIndex(String member) {
-        for (int i = 0; i < list.size(); i += 2) {
-            if (list.get(i).equals(member)) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
+    // --- 核心修复：ZREVRANGE ---
     @Override
     public List<RedisZSet.ZSetEntry> revRange(long start, long stop) {
         int size = size();
-        // 1. 转换索引: 正向 Range 的索引
-        // RevStart(0) -> Index(size-1)
+        if (size == 0) return Collections.emptyList();
+
+        // 1. 先归一化索引 (处理负数)
+        if (start < 0) start = size + start;
+        if (stop < 0) stop = size + stop;
+
+        // 2. 边界检查
+        if (start < 0) start = 0;
+        if (stop < 0) stop = 0;
+
+        if (start > stop || start >= size) {
+            return Collections.emptyList();
+        }
+        if (stop >= size) stop = size - 1;
+
+        // 3. 转换为正向索引
         long realStart = size - 1 - stop;
         long realStop = size - 1 - start;
 
-        // 2. 复用 range 方法获取正向列表
+        // 4. 获取正序
         List<RedisZSet.ZSetEntry> list = range(realStart, realStop);
 
-        // 3. 反转列表
+        // 5. 反转
         Collections.reverse(list);
         return list;
     }
@@ -134,14 +139,9 @@ public class ZipListZSetProvider implements ZSetProvider {
     public List<RedisZSet.ZSetEntry> rangeByScore(RangeSpec range, int offset, int count) {
         List<RedisZSet.ZSetEntry> result = new ArrayList<>();
         int skipped = 0;
-
-        // 线性遍历: member, score, member, score...
         for (int i = 0; i < list.size(); i += 2) {
             double score = (Double) list.get(i + 1);
-
-            // ZipList 是有序的，如果超过 max 直接退出 (优化点)
-            if (range.maxex ? score >= range.max : score > range.max) break;
-
+            if (range.maxex ? score >= range.max : score > range.max) break; // ZipList 有序，提前退出
             if (range.contains(score)) {
                 if (skipped < offset) {
                     skipped++;
@@ -159,7 +159,7 @@ public class ZipListZSetProvider implements ZSetProvider {
         long count = 0;
         for (int i = 1; i < list.size(); i += 2) {
             double score = (Double) list.get(i);
-            if (range.maxex ? score >= range.max : score > range.max) break; // 提前退出
+            if (range.maxex ? score >= range.max : score > range.max) break;
             if (range.contains(score)) {
                 count++;
             }
@@ -177,8 +177,7 @@ public class ZipListZSetProvider implements ZSetProvider {
         if (stop >= size) stop = size - 1;
 
         int removed = 0;
-        // 从后往前删，避免索引错位
-        // ZipList 物理索引: Rank * 2
+        // 从后往前删，索引安全
         for (long r = stop; r >= start; r--) {
             int idx = (int) (r * 2);
             list.remove(idx + 1);
@@ -191,9 +190,7 @@ public class ZipListZSetProvider implements ZSetProvider {
     @Override
     public int removeRangeByScore(RangeSpec range) {
         int removed = 0;
-        // 必须从前往后遍历，因为删除了元素索引会变，
-        // 或者使用迭代器，或者倒序遍历。
-        // 由于是 ArrayList，倒序遍历比较安全且高效。
+        // 从后往前删
         for (int i = list.size() - 2; i >= 0; i -= 2) {
             double score = (Double) list.get(i + 1);
             if (range.contains(score)) {
@@ -205,4 +202,12 @@ public class ZipListZSetProvider implements ZSetProvider {
         return removed;
     }
 
+    private int findMemberIndex(String member) {
+        for (int i = 0; i < list.size(); i += 2) {
+            if (list.get(i).equals(member)) {
+                return i;
+            }
+        }
+        return -1;
+    }
 }

@@ -8,19 +8,29 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
+/**
+ * 基于有序整数数组实现的 Set 存储引擎 (IntSet)
+ * <p>
+ * 适用场景：元素全为整数且数量较少时。
+ * 优势：内存极其紧凑，CPU 缓存友好。
+ * 劣势：插入/删除需要移动数组 (O(N))。
+ */
 public class IntSetProvider implements SetProvider {
 
     // 有序存储 long 值
+    // 在真实 Redis 中是 int8/int16/int32/int64 的连续内存块
+    // 这里用 ArrayList<Long> 模拟
     private final List<Long> integers = new ArrayList<>();
 
     @Override
     public int add(byte[] member) {
-        long val = parseLong(member); // 假设外部已经判断过是整数
+        long val = parseLong(member);
 
+        // 二分查找
         int index = Collections.binarySearch(integers, val);
         if (index >= 0) return 0; // 已存在
 
-        // binarySearch 返回 -(insertion point) - 1
+        // 插入点: -(insertion point) - 1
         int insertPoint = -(index + 1);
         integers.add(insertPoint, val);
         return 1;
@@ -35,7 +45,9 @@ public class IntSetProvider implements SetProvider {
                 integers.remove(index);
                 return 1;
             }
-        } catch (NumberFormatException ignored) {}
+        } catch (NumberFormatException ignored) {
+            // 如果传进来的不是数字，那肯定不在 IntSet 里
+        }
         return 0;
     }
 
@@ -66,26 +78,36 @@ public class IntSetProvider implements SetProvider {
     @Override
     public byte[] pop() {
         if (integers.isEmpty()) return null;
+        // 随机索引
         int idx = ThreadLocalRandom.current().nextInt(integers.size());
         Long val = integers.remove(idx);
         return String.valueOf(val).getBytes(StandardCharsets.UTF_8);
     }
 
+    /**
+     * 随机获取 N 个不重复元素
+     */
     @Override
     public List<byte[]> randomMembers(int count) {
-        // 简单实现，暂不处理 count < 0 (允许重复) 的情况
         if (integers.isEmpty()) return Collections.emptyList();
 
-        List<byte[]> result = new ArrayList<>();
-        int actualCount = Math.min(count, integers.size());
+        // 1. 如果请求数 >= 总数，返回全部
+        if (count >= integers.size()) {
+            return getAll();
+        }
 
-        // 既然要随机且不重复，我们可以shuffle个索引或者简单随机抽
-        // 为了简单，我们只做 pop 类似的逻辑但不删除
-        // 真正的 Redis SRANDMEMBER 逻辑比较复杂，这里简化
+        // 2. 随机抽样
+        // 为了保证不重复，我们使用索引 Shuffle 算法
+        List<byte[]> result = new ArrayList<>(count);
+        List<Integer> indices = new ArrayList<>(integers.size());
+        for (int i = 0; i < integers.size(); i++) indices.add(i);
 
-        // 随机抽一个
-        int idx = ThreadLocalRandom.current().nextInt(integers.size());
-        result.add(String.valueOf(integers.get(idx)).getBytes(StandardCharsets.UTF_8));
+        Collections.shuffle(indices); // O(N)
+
+        for (int i = 0; i < count; i++) {
+            Long val = integers.get(indices.get(i));
+            result.add(String.valueOf(val).getBytes(StandardCharsets.UTF_8));
+        }
         return result;
     }
 

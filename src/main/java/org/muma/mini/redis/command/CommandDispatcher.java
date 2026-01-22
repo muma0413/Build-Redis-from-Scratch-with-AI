@@ -195,6 +195,8 @@ public class CommandDispatcher {
         commandMap.put("ZREVRANGE", new ZRevRangeCommand());
         commandMap.put("ZRANGEBYSCORE", new ZRangeByScoreCommand());
         commandMap.put("ZSCAN", new ZScanCommand());
+        commandMap.put("ZRANK", new ZRankCommand());
+        commandMap.put("ZREVRANK", new ZRevRankCommand());
 
         // Rem Range
         commandMap.put("ZREMRANGEBYRANK", new ZRemRangeByRankCommand());

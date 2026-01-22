@@ -9,12 +9,21 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 基于跳表实现的 ZSet 存储引擎 (SkipList + Dict)
+ * <p>
+ * 适用场景：大数据量，或 member 长度较大时。
+ * 优势：
+ * 1. O(logN) 的插入、删除、查找、排名。
+ * 2. 支持高效的范围查询 (Range Query)。
+ * 3. Dict 提供 O(1) 的分数查找。
+ */
 public class SkipListZSetProvider implements ZSetProvider {
 
     // O(1) 查找 Score
     private final Map<String, Double> dict = new HashMap<>();
 
-    // O(logN) 排序与范围查找
+    // O(logN) 排序与范围查找，支持 Span 排名计算
     private final ZSkipList zsl = new ZSkipList();
 
     @Override
@@ -27,12 +36,12 @@ public class SkipListZSetProvider implements ZSetProvider {
                 zsl.updateScore(currentScore, member, score);
                 dict.put(member, score);
             }
-            return 0;
+            return 0; // Update
         } else {
             // 新增
             zsl.insert(score, member);
             dict.put(member, score);
-            return 1;
+            return 1; // Add
         }
     }
 
@@ -64,23 +73,27 @@ public class SkipListZSetProvider implements ZSetProvider {
     @Override
     public List<RedisZSet.ZSetEntry> range(long start, long stop) {
         long size = zsl.length();
+        if (size == 0) return Collections.emptyList();
 
-        // 处理负数索引
+        // 1. 处理负数索引 (例如 -1 表示最后一个)
         if (start < 0) start = size + start;
         if (stop < 0) stop = size + stop;
 
-        // 边界修正
+        // 2. 边界修正
         if (start < 0) start = 0;
+
+        // Redis 逻辑：start > stop 返回空
         if (start > stop || start >= size) return Collections.emptyList();
         if (stop >= size) stop = size - 1;
 
-        // 获取起始节点 (SkipList 是 1-based，所以 +1)
+        // 3. 获取起始节点 (SkipList 是 1-based，所以 +1)
+        // O(logN) 定位
         ZSkipListNode node = zsl.getNodeByRank(start + 1);
 
         List<RedisZSet.ZSetEntry> result = new ArrayList<>();
         long count = stop - start + 1;
 
-        // 遍历 Level 0 的链表
+        // 4. 遍历 Level 0 的链表 O(M)
         while (count > 0 && node != null) {
             result.add(new RedisZSet.ZSetEntry(node.member, node.score));
             node = node.level[0].forward;
@@ -102,18 +115,32 @@ public class SkipListZSetProvider implements ZSetProvider {
     @Override
     public List<RedisZSet.ZSetEntry> revRange(long start, long stop) {
         long size = zsl.length();
-        // 1. 数学转换：反向排名转正向排名
-        // 比如 size=10, revRange 0(第一名) 2(第三名)
-        // 对应正向 rank: 9(第一名), 7(第三名) -> range(7, 9)
+        if (size == 0) return Collections.emptyList();
+
+        // 【关键修复】先归一化索引，再反转逻辑
+        if (start < 0) start = size + start;
+        if (stop < 0) stop = size + stop;
+
+        if (start < 0) start = 0;
+        if (stop < 0) stop = 0;
+
+        // 检查有效性 (注意 revRange 的 start, stop 也是基于反向排名的)
+        if (start > stop || start >= size) {
+            return Collections.emptyList();
+        }
+        if (stop >= size) stop = size - 1;
+
+        // 转换为正向索引 (SkipList 的 Rank 是从小到大)
+        // RevStart(0) -> FwdIndex(size-1)
+        // RevStop(size-1) -> FwdIndex(0)
+        // 区间转换：[revStart, revStop] -> [size-1-revStop, size-1-revStart]
         long realStart = size - 1 - stop;
         long realStop = size - 1 - start;
 
-        // 2. 复用 range 获取正序结果
-        // range 方法内部会自动处理边界检查
+        // 复用 range 获取正序结果
         List<RedisZSet.ZSetEntry> list = range(realStart, realStop);
 
-        // 3. 内存反转
-        // 由于是从 range 获取的子集，数据量受 limit 限制，反转开销很小
+        // 内存反转 O(M)
         Collections.reverse(list);
         return list;
     }
@@ -126,10 +153,8 @@ public class SkipListZSetProvider implements ZSetProvider {
         List<RedisZSet.ZSetEntry> result = new ArrayList<>();
         if (node == null) return result;
 
-        // 2. 处理 offset
+        // 2. 处理 offset (Skip)
         while (offset > 0 && node != null) {
-            // 这里还可以优化：如果 offset 很大，可以用 span 跳跃，
-            // 但 Redis 源码对于 offset 也是简单遍历，除非做专门优化。
             // 简单遍历 Level 0 即可
             node = node.level[0].forward;
             // 检查是否还在范围内 (offset 过程中可能跳出 max)
@@ -171,6 +196,7 @@ public class SkipListZSetProvider implements ZSetProvider {
     @Override
     public int removeRange(long start, long stop) {
         // 1. 复用 range 获取要删除的 Entry 列表
+        // 这里的 range 已经处理好了 start/stop 的边界和负数逻辑
         List<RedisZSet.ZSetEntry> toRemove = range(start, stop);
 
         // 2. 循环删除
@@ -185,10 +211,7 @@ public class SkipListZSetProvider implements ZSetProvider {
 
     @Override
     public int removeRangeByScore(RangeSpec range) {
-        // 1. 复用 rangeByScore 获取列表
-        // 注意：如果数据量极大，全量获取可能会 OOM。
-        // 生产级优化应该分批获取删除，或者下沉到底层做指针操作。
-        // Mini-Redis 暂时全量获取。
+        // 1. 复用 rangeByScore 获取列表 (全量)
         List<RedisZSet.ZSetEntry> toRemove = rangeByScore(range, 0, Integer.MAX_VALUE);
 
         // 2. 循环删除
@@ -200,5 +223,4 @@ public class SkipListZSetProvider implements ZSetProvider {
         }
         return count;
     }
-
 }
