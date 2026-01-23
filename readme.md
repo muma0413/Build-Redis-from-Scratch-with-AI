@@ -1,5 +1,3 @@
-# Mini-Redis (AI Edition)
-
 <div align="center">
   <img src="docs/picture/mini-redis-logo.jpg" width="400" alt="Mini-Redis Logo">
 
