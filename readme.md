@@ -1,29 +1,56 @@
 # Mini-Redis (AI Edition)
 
 <div align="center">
-  <h1>🤖 + ☕ = 🚀</h1>
-  <h3>Gemini 3 pro 从零构建 Redis：人机结对编程实录</h3>
+  <img src="docs/picture/mini-redis-logo.jpg" width="400" alt="Mini-Redis Logo">
+
+  <h1>Mini-Redis (AI Edition)</h1>
+
+<h3>🤖 Gemini 3.0 Pro 从零构建 Redis：人机结对编程实录 🚀</h3>
+
   <p><b>Java 17 × Netty × 核心原理复刻</b></p>
   <p>不仅仅是 KV 存储，更是对 Redis 灵魂的致敬。</p>
 
   <p>
-    <a href="#-项目简介">项目简介</a> •
-    <a href="#-硬核技术栈">硬核技术栈</a> •
-    <a href="#-开发实录-pdf">开发实录</a> •
-    <a href="#-快速开始">快速开始</a> •
-    <a href="#-路线图">路线图</a>
+    <!-- 这里可以加一些 Shields 徽章，增加专业感 -->
+    <a href="https://github.com/muma0413/Build-Redis-from-Scratch-with-AI/blob/main/LICENSE">
+      <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License">
+    </a>
+    <a href="https://www.oracle.com/java/technologies/javase/jdk17-archive-downloads.html">
+      <img src="https://img.shields.io/badge/Java-17-orange.svg" alt="Java 17">
+    </a>
+    <a href="https://deepmind.google/technologies/gemini/">
+      <img src="https://img.shields.io/badge/AI%20Model-Gemini%203.0%20Pro-purple" alt="Powered by Gemini">
+    </a>
   </p>
+
+  <p>
+    <a href="#-项目简介">项目简介</a> •
+    <a href="#-硬核技术栈--核心特性">硬核技术栈</a> •
+    <a href="#-持久化-persistence">持久化机制</a> •
+    <a href="#-性能基准测试-benchmark-report">性能测试</a> •
+    <a href="#-开发实录-the-ai-journey">开发实录</a> •
+    <a href="#-快速开始">快速开始</a> •
+    <a href="#-路线图-roadmap">路线图</a>
+  </p>
+
 </div>
+
+---
+
 
 ---
 
 ## 📖 项目简介
 
-**Mini-Redis** 是一个基于 **Java 17** 和 **Netty** 构建的高性能 Redis 服务器实现。
+**Mini-Redis** 不仅仅是一个 KV 存储引擎，它是 **AI 辅助编程 (AI-Native Development)** 极限能力的试金石。
 
-不同于市面上常见的“玩具级”实现（仅封装 HashMap），本项目致力于**深度复刻 Redis 的核心内部机制**。我们拒绝黑盒，每一行代码都源于对 Redis 源码 (`t_zset.c`, `t_list.c`, `networking.c`) 的深度理解与再创造。
+本项目由 **Gemini 3.0 Pro** 全程深度参与构建。从一行代码都没有的空白仓库，到拥有 **MP-AOF、QuickList、SkipList** 的工业级存储引擎，每一行代码都凝聚了 **人类程序员思维** 与 **AI 极致执行力** 的碰撞。
 
-**开发模式**：本项目由人类普通程序员与 Gemini AI 全程结对编程完成。从架构设计到 Bug 修复，所有决策过程均有完整记录。
+**为什么它不是“又一个玩具”？**
+不同于市面上仅封装 `HashMap` 的简单实现，我们追求**技术深度的 1:1 复刻**。我们不仅实现了基础功能，更挑战了 **Redis 7.0+** 的前沿特性（如 Multi-Part AOF 增量重写、SINTERCARD、LPOP Count 等）。
+
+基于 **Java 17** 和 **Netty** 的高性能 Reactor 模型，证明了在现代 JVM 上复刻工业级 C 语言中间件的可行性与惊人性能。
+
 
 ---
 
@@ -157,9 +184,12 @@ OK
     - [x] **级联复制**: 支持 Master -> Slave -> Slave 链式传播
     - [x] **心跳保活**: PING / REPLCONF ACK 机制
 
-- [ ] **Phase 6: 未来展望 (Future)**
-    - [ ] **Cluster**: 简单的分片逻辑 (Gossip 协议)
-    - [ ] **LSM-Tree**: 探索基于磁盘的存储引擎 (RocksDB 风格)
+- [ ] **Phase 6: 运维与扩展 (Ops & Future)**
+    - [ ] **Dockerization**: 提供标准 Dockerfile 及 Docker Compose 编排，一键启动集群。
+    - [ ] **Observability**: 实现 `INFO` (增强版), `MONITOR`, `SLOWLOG` 等监控指令。
+    - [ ] **Cluster**: 探索基于 Gossip 协议的分片集群。
+    - [ ] **LSM-Tree**: 探索基于磁盘的存储引擎 (RocksDB 风格)。
+
 
 
 ---
@@ -281,9 +311,73 @@ Mini-Redis 目前支持：
 
 在 redis.properties 中配置：
 ```properties
-# Slave 配置
-port=6380
-slaveof=127.0.0.1 6379
+# =========================================================
+# Mini-Redis 核心配置文件 (redis.properties)
+# =========================================================
+
+# --- 网络与连接 (Network) ---
+# 服务器监听端口 (默认: 6379)
+server.port=6379
+
+# Netty Worker 线程数 (0 = 自动设置为 CPU 核心数 * 2)
+# 调大此值可提升高并发下的 IO 吞吐量
+server.worker_threads=0
+
+# 最大客户端连接数限制
+server.max_clients=10000
+
+# --- 存储引擎策略 (Storage Backend) ---
+# 集合(Set) 和 哈希(Hash) 的底层实现策略
+# JDK_HASHMAP: 吞吐量极高，但扩容时可能会有瞬间卡顿 (STW)
+# REDIS_DICT:  自研实现，支持渐进式 Rehash，延迟极低且平滑 (推荐生产环境)
+backend.set_dict=REDIS_DICT
+
+# --- 持久化: AOF (Append Only File) ---
+# 是否开启 AOF 持久化 (yes/no)
+# 建议开启以保证数据安全性，重启时优先加载 AOF
+appendonly=yes
+
+# AOF 刷盘策略
+# always:   每条写命令都刷盘 (最安全，性能最低)
+# everysec: 每秒刷盘一次 (推荐，折中方案，最多丢1秒数据)
+# no:       操作系统决定 (最快，不安全)
+appendfsync=everysec
+
+# AOF 文件存储目录 (相对于工作目录)
+appenddirname=appendonlydir
+
+# AOF 主文件名
+appendfilename=appendonly.aof
+
+# 是否使用 RDB 混合格式头 (暂未启用，预留配置)
+aof-use-rdb-preamble=no
+
+# AOF 自动重写触发条件
+# 当 AOF 文件大小增长率超过此百分比时触发重写
+auto-aof-rewrite-percentage=100
+# 允许触发重写的最小文件体积 (避免小文件频繁重写)
+auto-aof-rewrite-min-size=64mb
+
+# --- 持久化: RDB (Snapshot) ---
+# 快照自动保存策略 (格式: <seconds> <changes>)
+# 900秒内有1次修改，或300秒内10次，或60秒内10000次
+save=900 1 300 10 60 10000
+
+# RDB 文件名
+dbfilename=dump.rdb
+
+# --- 主从复制 (Replication) ---
+# 如果配置了以下项，当前实例启动后将自动连接 Master 成为 Slave
+# slaveof=127.0.0.1 6379
+
+# 断线重连间隔 (毫秒)
+repl-retry-interval=1000
+
+# --- 工作目录 (Working Directory) ---
+# RDB 文件和 AOF 目录将存放于此
+# 默认为当前启动目录 (.)
+dir=.
+
 
 ```
 方式二：运行时动态挂载
