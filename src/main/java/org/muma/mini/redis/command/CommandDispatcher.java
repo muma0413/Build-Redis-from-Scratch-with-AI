@@ -6,6 +6,9 @@ import org.muma.mini.redis.command.impl.bf.BfAddCommand;
 import org.muma.mini.redis.command.impl.bf.BfExistsCommand;
 import org.muma.mini.redis.command.impl.bf.BfReserveCommand;
 import org.muma.mini.redis.command.impl.hash.*;
+import org.muma.mini.redis.command.impl.hll.PfAddCommand;
+import org.muma.mini.redis.command.impl.hll.PfCountCommand;
+import org.muma.mini.redis.command.impl.hll.PfMergeCommand;
 import org.muma.mini.redis.command.impl.key.*;
 import org.muma.mini.redis.command.impl.list.*;
 import org.muma.mini.redis.command.impl.replication.DebugBreakCommand;
@@ -87,6 +90,7 @@ public class CommandDispatcher {
         registerZSetCommands();
         registerBloomCommands();
         registerReplicationCommands();
+        registerHllCommands();
 
         log.info("CommandDispatcher initialized. Total commands registered: {}", commandMap.size());
     }
@@ -99,6 +103,13 @@ public class CommandDispatcher {
         commandMap.put("EXISTS", new ExistsCommand());
         commandMap.put("TTL", new TTLCommand());
         commandMap.put("PTTL", new PTTLCommand());
+    }
+
+
+    private void registerHllCommands() {
+        commandMap.put("PFADD", new PfAddCommand());
+        commandMap.put("PFCOUNT", new PfCountCommand());
+        commandMap.put("PFMERGE", new PfMergeCommand());
     }
 
     private void registerStringCommands() {

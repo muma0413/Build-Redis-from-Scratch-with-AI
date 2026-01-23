@@ -55,6 +55,20 @@ public class MurmurHash3 {
         return h1;
     }
 
+
+    // 简单的 64 位 MurmurHash3 实现 (或者使用 Guava/Commons 的实现)
+    // 这里为了不引入依赖，我们使用一个简单的组合策略：
+    // hash64 = (long)hash32(data) | ((long)hash32(reverse(data)) << 32)
+    // 虽然不是标准的 Murmur64，但对于 HLL 演示足够随机了。
+    public static long hash64(byte[] data) {
+        int h1 = hash32(data);
+        // 反转数组计算第二个 hash (模拟独立性)
+        byte[] rev = new byte[data.length];
+        for (int i = 0; i < data.length; i++) rev[i] = data[data.length - 1 - i];
+        int h2 = hash32(rev);
+        return ((long) h1 << 32) | (h2 & 0xFFFFFFFFL);
+    }
+
     // 适配 String
     public static int hash32(String str) {
         return hash32(str.getBytes(StandardCharsets.UTF_8));
