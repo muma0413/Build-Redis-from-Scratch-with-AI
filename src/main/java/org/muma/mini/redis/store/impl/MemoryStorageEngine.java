@@ -164,4 +164,9 @@ public class MemoryStorageEngine implements StorageEngine {
             // 如果过期比例高，可以尝试立即再跑一次 (简化逻辑暂不实现)
         }
     }
+
+    @Override
+    public long size() {
+        return memoryDb.size();
+    }
 }

@@ -41,4 +41,6 @@ public interface StorageEngine {
 
     void resetDirty(); // 保存成功后调用
 
+
+    long size();
 }

@@ -14,6 +14,7 @@ import org.muma.mini.redis.command.impl.list.*;
 import org.muma.mini.redis.command.impl.replication.DebugBreakCommand;
 import org.muma.mini.redis.command.impl.replication.PsyncCommand;
 import org.muma.mini.redis.command.impl.replication.ReplConfCommand;
+import org.muma.mini.redis.command.impl.server.DbSizeCommand;
 import org.muma.mini.redis.command.impl.server.PingCommand;
 import org.muma.mini.redis.command.impl.server.SlaveOfCommand;
 import org.muma.mini.redis.command.impl.set.*;
@@ -103,6 +104,7 @@ public class CommandDispatcher {
         commandMap.put("EXISTS", new ExistsCommand());
         commandMap.put("TTL", new TTLCommand());
         commandMap.put("PTTL", new PTTLCommand());
+        commandMap.put("DBSIZE", new DbSizeCommand());
     }
 
 
